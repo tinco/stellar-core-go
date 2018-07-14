@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -60,7 +61,8 @@ const (
 func main() {
 	fmt.Println("Stellar Go Debug Client")
 	// Connect to validator
-	conn, err := net.Dial("tcp", "stellar0.keybase.io:11625")
+	// conn, err := net.Dial("tcp", "stellar0.keybase.io:11625")
+	conn, err := net.Dial("tcp", "localhost:11625")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -136,7 +138,7 @@ func sendMessage(conn net.Conn, key []byte, message xdr.StellarMessage) {
 	var messageBuffer bytes.Buffer
 	xdr.Marshal(&messageBuffer, &am)
 	outBytes := messageBuffer.Bytes()
-	sendHeader(conn, len(outBytes))
+	sendHeader(conn, uint32(len(outBytes)))
 	conn.Write(messageBuffer.Bytes())
 }
 
@@ -180,8 +182,16 @@ func receiveMessage(conn net.Conn) xdr.StellarMessage {
 	return message //.MustV0().Message
 }
 
-func sendHeader(conn net.Conn, length int) {
+func sendHeader(conn net.Conn, length uint32) {
+	// In RPC (see RFC5531 section 11), the high bit means this is the
+	// last record fragment in a record.  If the high bit is clear, it
+	// means another fragment follows.  We don't currently implement
+	// continuation fragments, and instead always set the last-record
+	// bit to produce a single-fragment record.
 
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, length|0x80000000)
+	conn.Write(header)
 }
 
 func receiveHeader(conn net.Conn) int {
