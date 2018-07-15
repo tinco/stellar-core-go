@@ -17,7 +17,7 @@ import (
 
 const secretSeedString string = "SAN6S4HURKTECO6MGKDKNPQUZFEDDW7CODR63ZIEKGFW27MUWZX2TNV2"
 const publicKeyString string = "GCFVEVUGA62TM3P2HCBZRRAGIV4CMDNZGQYXD733LSEO6RDHPU5H7MOX"
-const networkPassPhrase string = ""
+const networkPassPhrase string = "Public Global Stellar Network ; September 2015"
 
 var secretSeedBytes []byte
 var publicKeyBytes []byte
@@ -31,6 +31,11 @@ var networkID xdr.Hash
 func setupCrypto() {
 	var err error
 	secretSeedBytes, err = strkey.Decode(strkey.VersionByteSeed, secretSeedString)
+	if err != nil {
+		fmt.Println(err)
+		panic("Could not initialize keys.")
+	}
+
 	publicKeyBytes, err = strkey.Decode(strkey.VersionByteAccountID, publicKeyString)
 
 	copy(secretSeed[:], secretSeedBytes)
@@ -123,8 +128,13 @@ func getAuthCert() xdr.AuthCert {
 	xdr.Marshal(&messageDataBuffer, &expiration)
 	xdr.Marshal(&messageDataBuffer, &publicKey)
 
+	// fmt.Printf("AuthCertBytes: %s", hex.Dump(messageDataBuffer.Bytes()))
+
 	hash := sha256.Sum256(messageDataBuffer.Bytes())
 	sig := sign(hash)
+
+	// fmt.Printf("Hash: %s", hex.Dump(hash[:]))
+	// fmt.Printf("Sig: %s", hex.Dump(sig))
 
 	cachedAuthCert = xdr.AuthCert{
 		Pubkey:     xdr.Curve25519Public{Key: publicKey},
@@ -146,9 +156,6 @@ func sendMessage(conn net.Conn, message xdr.StellarMessage) {
 		Mac:      xdr.HmacSha256Mac{Mac: mac},
 	}
 	am, _ := xdr.NewAuthenticatedMessage(xdr.Uint32(0), am0)
-
-	fmt.Printf("AM : %v\n", am)
-	fmt.Printf("AM0 : %v\n", am0)
 
 	var messageBuffer bytes.Buffer
 	xdr.Marshal(&messageBuffer, &am)
