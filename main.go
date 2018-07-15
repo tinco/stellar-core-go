@@ -7,59 +7,50 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"reflect"
-	"runtime"
+	"time"
+
+	"golang.org/x/crypto/ed25519"
 
 	"github.com/stellar/go/strkey"
 	"github.com/stellar/go/xdr"
 )
 
-// MessageType represents the type of the SCP message
-type MessageType int
+const secretSeedString string = "SAN6S4HURKTECO6MGKDKNPQUZFEDDW7CODR63ZIEKGFW27MUWZX2TNV2"
+const publicKeyString string = "GCFVEVUGA62TM3P2HCBZRRAGIV4CMDNZGQYXD733LSEO6RDHPU5H7MOX"
+const networkPassPhrase string = ""
 
-const (
-	// ErrorMsg is a message that conveys an error has happened at the sender
-	ErrorMsg MessageType = 0
+var secretSeedBytes []byte
+var publicKeyBytes []byte
+var secretSeed xdr.Uint256
+var publicKey xdr.Uint256
+var privateKey ed25519.PrivateKey
 
-	// Auth is a message that indicates the sender wants to authenticate
-	Auth MessageType = 2
+var cachedAuthCert xdr.AuthCert
+var networkID xdr.Hash
 
-	// DontHave (indicates the sender doesn't have something?)
-	DontHave MessageType = 3
+func setupCrypto() {
+	var err error
+	secretSeedBytes, err = strkey.Decode(strkey.VersionByteSeed, secretSeedString)
+	publicKeyBytes, err = strkey.Decode(strkey.VersionByteAccountID, publicKeyString)
 
-	// GetPeers requests the recipient responds with a list of peers
-	GetPeers MessageType = 4
+	copy(secretSeed[:], secretSeedBytes)
+	copy(publicKey[:], publicKeyBytes)
 
-	// Peers is a message with the list of peers the sender is connected to
-	Peers MessageType = 5
+	networkID = xdr.Hash(sha256.Sum256([]byte(networkPassPhrase)))
 
-	// GetTxSet requests the sender responds with a transaction set identified by a hash
-	GetTxSet MessageType = 6
+	privateKey = ed25519.NewKeyFromSeed(secretSeedBytes)
 
-	// TxSet is a message that contains a transaction set requested previously by recipient
-	TxSet MessageType = 7
-
-	// Transaction has details about a transaction that a peer has heard about
-	Transaction MessageType = 8
-
-	// GetScpQuorumset requests the recipient to respond with its quorum set
-	GetScpQuorumset MessageType = 9
-
-	// ScpQuorumset informs the recipient of the quorumset the sender is part of
-	ScpQuorumset MessageType = 10
-
-	// ScpMessage is a general message regarding SCP (??)
-	ScpMessage MessageType = 11
-
-	//GetScpState requests the sender respond with SCP status (??) (should be this be ScpState?)
-	GetScpState MessageType = 12
-
-	// Hello introduces recipient of the intent to communicate (necessary before Auth)
-	Hello MessageType = 13
-)
+	if err != nil {
+		fmt.Println(err)
+		panic("Could not initialize keys.")
+	}
+}
 
 func main() {
 	fmt.Println("Stellar Go Debug Client")
+
+	setupCrypto()
+
 	// Connect to validator
 	// conn, err := net.Dial("tcp", "stellar0.keybase.io:11625")
 	conn, err := net.Dial("tcp", "localhost:11625")
@@ -68,29 +59,18 @@ func main() {
 		return
 	}
 
-	// defer stackDump(&err, main)
-
-	// secretSeedString := "SAN6S4HURKTECO6MGKDKNPQUZFEDDW7CODR63ZIEKGFW27MUWZX2TNV2"
-	publicKeyString := "GCFVEVUGA62TM3P2HCBZRRAGIV4CMDNZGQYXD733LSEO6RDHPU5H7MOX"
-
-	// secretKey, err := strkey.Decode(strkey.VersionByteSeed, secretSeedString)
-	publicKey, err := strkey.Decode(strkey.VersionByteAccountID, publicKeyString)
-	var publicKeyBytes xdr.Uint256
-	copy(publicKeyBytes[:], publicKey)
-
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	networkID := xdr.Hash(sha256.Sum256([]byte("mysimpleclient-1")))
-	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, publicKeyBytes)
+	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, publicKey)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	authCert := xdr.AuthCert{}
+	authCert := getAuthCert()
 
 	// Send Hello message
 	hello := xdr.Hello{
@@ -110,7 +90,7 @@ func main() {
 		fmt.Println(err)
 	}
 
-	sendMessage(conn, publicKey, message)
+	sendMessage(conn, message)
 
 	response := receiveMessage(conn)
 
@@ -121,7 +101,42 @@ func main() {
 	fmt.Printf("response: %+v", response)
 }
 
-func sendMessage(conn net.Conn, key []byte, message xdr.StellarMessage) {
+func sign(hash [sha256.Size]byte) xdr.Signature {
+	signature := ed25519.Sign(privateKey, hash[:])
+	return xdr.Signature(signature)
+}
+
+func getAuthCert() xdr.AuthCert {
+	now := time.Now().Unix()
+
+	if cachedAuthCert.Expiration > xdr.Uint64(now) {
+		return cachedAuthCert
+	}
+
+	expirationLimit := int64(3600) // one hour
+	expiration := xdr.Uint64(now + expirationLimit)
+
+	var messageDataBuffer bytes.Buffer
+
+	xdr.Marshal(&messageDataBuffer, &networkID)
+	xdr.Marshal(&messageDataBuffer, xdr.EnvelopeTypeEnvelopeTypeAuth)
+	xdr.Marshal(&messageDataBuffer, &expiration)
+	xdr.Marshal(&messageDataBuffer, &publicKey)
+
+	hash := sha256.Sum256(messageDataBuffer.Bytes())
+	sig := sign(hash)
+
+	cachedAuthCert = xdr.AuthCert{
+		Pubkey:     xdr.Curve25519Public{Key: publicKey},
+		Expiration: xdr.Uint64(expiration),
+		Sig:        sig,
+	}
+
+	return cachedAuthCert
+
+}
+
+func sendMessage(conn net.Conn, message xdr.StellarMessage) {
 	//mac := hmac.New(sha256.New, key)
 	// mac.Sum()
 	var mac [32]byte
@@ -148,10 +163,10 @@ func receiveMessage(conn net.Conn) xdr.StellarMessage {
 		fmt.Println("Got a length of 0 or smaller")
 	}
 
-	buf := make([]byte, 0, length) // big buffer
+	buf := make([]byte, 0, length)
 	bytesRead := 0
 	for {
-		tmp := make([]byte, length-bytesRead) // using small tmo buffer for demonstrating
+		tmp := make([]byte, length-bytesRead)
 		n, err := conn.Read(tmp)
 		bytesRead += n
 		if err != nil {
@@ -217,22 +232,4 @@ func receiveHeader(conn net.Conn) int {
 	length <<= 8
 	length |= int(header[3])
 	return length
-}
-
-func stackDump(err *error, f interface{}) {
-	fname := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
-	_, file, line, _ := runtime.Caller(4) // this skips the first 4 that are called under log.Panic()
-	if r := recover(); r != nil {
-		fmt.Printf("%s (recover): %v\n", fname, r)
-		if err != nil {
-			*err = fmt.Errorf("%v", r)
-		}
-	} else if err != nil && *err != nil {
-		fmt.Printf("%s : %v\n", fname, *err)
-	}
-
-	buf := make([]byte, 1<<10)
-	runtime.Stack(buf, false)
-	fmt.Println("==> stack trace: [PANIC:", file, line, fname+"]")
-	fmt.Println(string(buf))
 }
