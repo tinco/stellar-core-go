@@ -84,7 +84,7 @@ func main() {
 		OverlayMinVersion: 0,
 		NetworkId:         networkID,
 		VersionStr:        "stellar-core-go[alpha-0.0]",
-		ListeningPort:     0,
+		ListeningPort:     11625,
 		PeerId:            peerID,
 		Cert:              authCert,
 		Nonce:             xdr.Uint256{1},
@@ -98,9 +98,6 @@ func main() {
 	sendMessage(conn, message)
 
 	response := receiveMessage(conn)
-
-	error := response.MustError()
-	fmt.Printf("Error: %+v\n", error.Msg)
 
 	// Print any responses
 	fmt.Printf("response: %+v", response)
@@ -191,7 +188,7 @@ func receiveMessage(conn net.Conn) xdr.StellarMessage {
 
 	fmt.Println("got", bytesRead, "bytes.")
 
-	var message xdr.StellarMessage
+	var message xdr.AuthenticatedMessage
 	bytesRead, err := xdr.Unmarshal(bytes.NewReader(buf), &message)
 	if err != nil {
 		fmt.Println(err)
@@ -201,7 +198,7 @@ func receiveMessage(conn net.Conn) xdr.StellarMessage {
 	fmt.Println("length expected:", length)
 	fmt.Printf("Buffer : %v\n", buf)
 
-	return message //.MustV0().Message
+	return message.MustV0().Message
 }
 
 func sendHeader(conn net.Conn, length uint32) {
