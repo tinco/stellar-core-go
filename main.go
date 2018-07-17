@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -67,11 +66,11 @@ func setupCrypto() {
 
 	// Set up auth secret key
 	rand.Read(authSecretKey[:])
-	fmt.Printf("authSecretKey: %s\n", hex.EncodeToString(authSecretKey[:]))
+	// fmt.Printf("authSecretKey: %s\n", hex.EncodeToString(authSecretKey[:]))
 
 	// Set up auth public key
 	curve25519.ScalarBaseMult(&authPublicKey, &authSecretKey)
-	fmt.Printf("authPublicKey: %s\n", hex.EncodeToString(authPublicKey[:]))
+	// fmt.Printf("authPublicKey: %s\n", hex.EncodeToString(authPublicKey[:]))
 }
 
 func handleHello(hello xdr.Hello) {
@@ -81,7 +80,7 @@ func handleHello(hello xdr.Hello) {
 }
 
 func setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {
-	fmt.Printf("remotePublicKey: %s\n", hex.EncodeToString(remotePublicKey[:]))
+	// fmt.Printf("remotePublicKey: %s\n", hex.EncodeToString(remotePublicKey[:]))
 
 	// Set up auth shared key
 	var publicA [32]byte
@@ -102,8 +101,10 @@ func setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bo
 	buf.Write(publicA[:])
 	buf.Write(publicB[:])
 
-	authSharedKey = hkdfExtract(q[:])
-	fmt.Printf("authSharedKey: %s\n", hex.EncodeToString(authSharedKey[:]))
+	// fmt.Printf("sharedkey AB: %s\n", hex.EncodeToString(buf.Bytes()))
+
+	authSharedKey = hkdfExtract(buf.Bytes())
+	// fmt.Printf("authSharedKey: %s\n", hex.EncodeToString(authSharedKey[:]))
 
 	// Set up sendingMacKey
 
@@ -122,7 +123,7 @@ func setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bo
 	buf.Write(remoteNonce[:])
 
 	sendingMacKey = hkdfExpand(authSharedKey, buf)
-	fmt.Printf("sendingMacKey: %s\n", hex.EncodeToString(sendingMacKey[:]))
+	// fmt.Printf("sendingMacKey: %s\n", hex.EncodeToString(sendingMacKey[:]))
 
 	// Set up receivingMacKey
 
@@ -137,7 +138,7 @@ func setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bo
 	buf.Write(localNonce[:])
 
 	receivingMacKey = hkdfExpand(authSharedKey, buf)
-	fmt.Printf("receivingMacKey: %s\n", hex.EncodeToString(receivingMacKey[:]))
+	// fmt.Printf("receivingMacKey: %s\n", hex.EncodeToString(receivingMacKey[:]))
 
 }
 
@@ -217,7 +218,7 @@ func main() {
 
 	sendMessage(conn, message)
 
-	authResponse := receiveMessage(conn).MustError()
+	authResponse := receiveMessage(conn)
 	fmt.Printf("response: %+v", authResponse)
 
 }
@@ -278,9 +279,9 @@ func sendMessage(conn net.Conn, message xdr.StellarMessage) {
 		copy(mac[:], hmac.Sum(nil))
 		am0.Mac = xdr.HmacSha256Mac{Mac: mac}
 
-		fmt.Printf("Mac: %s\n", hex.EncodeToString(mac[:]))
-		fmt.Printf("MacKey: %s\n", hex.EncodeToString(sendingMacKey))
-		fmt.Printf("Msg: %s\n", hex.EncodeToString(buf.Bytes()))
+		// fmt.Printf("Mac: %s\n", hex.EncodeToString(mac[:]))
+		// fmt.Printf("MacKey: %s\n", hex.EncodeToString(sendingMacKey))
+		// fmt.Printf("Msg: %s\n", hex.EncodeToString(buf.Bytes()))
 
 		/* It expects that the message mac, with the received mac key, together verify the sequence + message */
 
