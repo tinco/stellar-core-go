@@ -2,13 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
 	"time"
 
+	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/ed25519"
 
 	"github.com/stellar/go/strkey"
@@ -28,6 +32,17 @@ var privateKey ed25519.PrivateKey
 var cachedAuthCert xdr.AuthCert
 var networkID xdr.Hash
 
+var sendMessageSequence xdr.Uint64
+
+var authSecretKey [32]byte
+var authPublicKey [32]byte
+var authSharedKey []byte
+
+var receivingMacKey []byte
+var sendingMacKey []byte
+
+var localNonce [32]byte
+
 func setupCrypto() {
 	var err error
 	secretSeedBytes, err = strkey.Decode(strkey.VersionByteSeed, secretSeedString)
@@ -42,13 +57,102 @@ func setupCrypto() {
 	copy(publicKey[:], publicKeyBytes)
 
 	networkID = xdr.Hash(sha256.Sum256([]byte(networkPassPhrase)))
-
 	privateKey = ed25519.NewKeyFromSeed(secretSeedBytes)
+	rand.Read(localNonce[:])
 
 	if err != nil {
 		fmt.Println(err)
 		panic("Could not initialize keys.")
 	}
+
+	// Set up auth secret key
+	rand.Read(authSecretKey[:])
+	fmt.Printf("authSecretKey: %s\n", hex.EncodeToString(authSecretKey[:]))
+
+	// Set up auth public key
+	curve25519.ScalarBaseMult(&authPublicKey, &authSecretKey)
+	fmt.Printf("authPublicKey: %s\n", hex.EncodeToString(authPublicKey[:]))
+}
+
+func handleHello(hello xdr.Hello) {
+	remotePublicKey := hello.Cert.Pubkey
+	remoteNonce := hello.Nonce
+	setupRemoteKeys(remotePublicKey.Key, remoteNonce, true)
+}
+
+func setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {
+	fmt.Printf("remotePublicKey: %s\n", hex.EncodeToString(remotePublicKey[:]))
+
+	// Set up auth shared key
+	var publicA [32]byte
+	var publicB [32]byte
+
+	if weCalled {
+		publicA = authPublicKey
+		publicB = remotePublicKey
+	} else {
+		publicA = remotePublicKey
+		publicB = authPublicKey
+	}
+
+	var q [32]byte
+	curve25519.ScalarMult(&q, &authSecretKey, &remotePublicKey)
+
+	buf := bytes.NewBuffer(q[:])
+	buf.Write(publicA[:])
+	buf.Write(publicB[:])
+
+	authSharedKey = hkdfExtract(q[:])
+	fmt.Printf("authSharedKey: %s\n", hex.EncodeToString(authSharedKey[:]))
+
+	// Set up sendingMacKey
+
+	// If weCalled then sending key is K_AB,
+	// and A is local and B is remote.
+	// If REMOTE_CALLED_US then sending key is K_BA,
+	// and B is local and A is remote.
+
+	buf = &bytes.Buffer{}
+	if weCalled {
+		buf.WriteByte(0)
+	} else {
+		buf.WriteByte(1)
+	}
+	buf.Write(localNonce[:])
+	buf.Write(remoteNonce[:])
+
+	sendingMacKey = hkdfExpand(authSharedKey, buf)
+	fmt.Printf("sendingMacKey: %s\n", hex.EncodeToString(sendingMacKey[:]))
+
+	// Set up receivingMacKey
+
+	buf = &bytes.Buffer{}
+
+	if weCalled {
+		buf.WriteByte(0)
+	} else {
+		buf.WriteByte(1)
+	}
+	buf.Write(remoteNonce[:])
+	buf.Write(localNonce[:])
+
+	receivingMacKey = hkdfExpand(authSharedKey, buf)
+	fmt.Printf("receivingMacKey: %s\n", hex.EncodeToString(receivingMacKey[:]))
+
+}
+
+func hkdfExtract(buf []byte) []byte {
+	zerosalt := make([]byte, 32)
+	hmac := hmac.New(sha256.New, zerosalt)
+	hmac.Write(buf)
+	return hmac.Sum(nil)
+}
+
+func hkdfExpand(key []byte, buf *bytes.Buffer) []byte {
+	buf.WriteByte(1)
+	hmac := hmac.New(sha256.New, key)
+	hmac.Write(buf.Bytes())
+	return hmac.Sum(nil)
 }
 
 func main() {
@@ -69,7 +173,7 @@ func main() {
 		return
 	}
 
-	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, publicKey)
+	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, xdr.Uint256(publicKey))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -87,7 +191,7 @@ func main() {
 		ListeningPort:     11625,
 		PeerId:            peerID,
 		Cert:              authCert,
-		Nonce:             xdr.Uint256{1},
+		Nonce:             xdr.Uint256(localNonce),
 	}
 
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeHello, hello)
@@ -97,10 +201,25 @@ func main() {
 
 	sendMessage(conn, message)
 
-	response := receiveMessage(conn)
+	helloResponse := receiveMessage(conn).MustHello()
+	handleHello(helloResponse)
 
 	// Print any responses
-	fmt.Printf("response: %+v", response)
+	fmt.Printf("response: %+v\n\n", helloResponse)
+
+	// Auth is just an empty message with a valid mac
+	auth := xdr.Auth{}
+
+	message, err = xdr.NewStellarMessage(xdr.MessageTypeAuth, auth)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	sendMessage(conn, message)
+
+	authResponse := receiveMessage(conn).MustError()
+	fmt.Printf("response: %+v", authResponse)
+
 }
 
 func sign(hash [sha256.Size]byte) xdr.Signature {
@@ -123,7 +242,7 @@ func getAuthCert() xdr.AuthCert {
 	xdr.Marshal(&messageDataBuffer, &networkID)
 	xdr.Marshal(&messageDataBuffer, xdr.EnvelopeTypeEnvelopeTypeAuth)
 	xdr.Marshal(&messageDataBuffer, &expiration)
-	xdr.Marshal(&messageDataBuffer, &publicKey)
+	xdr.Marshal(&messageDataBuffer, &authPublicKey)
 
 	// fmt.Printf("AuthCertBytes: %s", hex.Dump(messageDataBuffer.Bytes()))
 
@@ -134,7 +253,7 @@ func getAuthCert() xdr.AuthCert {
 	// fmt.Printf("Sig: %s", hex.Dump(sig))
 
 	cachedAuthCert = xdr.AuthCert{
-		Pubkey:     xdr.Curve25519Public{Key: publicKey},
+		Pubkey:     xdr.Curve25519Public{Key: authPublicKey},
 		Expiration: xdr.Uint64(expiration),
 		Sig:        sig,
 	}
@@ -144,14 +263,30 @@ func getAuthCert() xdr.AuthCert {
 }
 
 func sendMessage(conn net.Conn, message xdr.StellarMessage) {
-	//mac := hmac.New(sha256.New, key)
-	// mac.Sum()
-	var mac [32]byte
 	am0 := xdr.AuthenticatedMessageV0{
-		Sequence: xdr.Uint64(0),
+		Sequence: sendMessageSequence,
 		Message:  message,
-		Mac:      xdr.HmacSha256Mac{Mac: mac},
 	}
+
+	if message.Type != xdr.MessageTypeHello {
+		buf := bytes.Buffer{}
+		xdr.Marshal(&buf, &am0.Sequence)
+		xdr.Marshal(&buf, &am0.Message)
+		hmac := hmac.New(sha256.New, sendingMacKey)
+		hmac.Write(buf.Bytes())
+		var mac [32]byte
+		copy(mac[:], hmac.Sum(nil))
+		am0.Mac = xdr.HmacSha256Mac{Mac: mac}
+
+		fmt.Printf("Mac: %s\n", hex.EncodeToString(mac[:]))
+		fmt.Printf("MacKey: %s\n", hex.EncodeToString(sendingMacKey))
+		fmt.Printf("Msg: %s\n", hex.EncodeToString(buf.Bytes()))
+
+		/* It expects that the message mac, with the received mac key, together verify the sequence + message */
+
+		sendMessageSequence++
+	}
+
 	am, _ := xdr.NewAuthenticatedMessage(xdr.Uint32(0), am0)
 
 	var messageBuffer bytes.Buffer
@@ -186,17 +321,13 @@ func receiveMessage(conn net.Conn) xdr.StellarMessage {
 		}
 	}
 
-	fmt.Println("got", bytesRead, "bytes.")
-
 	var message xdr.AuthenticatedMessage
-	bytesRead, err := xdr.Unmarshal(bytes.NewReader(buf), &message)
+	_, err := xdr.Unmarshal(bytes.NewReader(buf), &message)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	fmt.Println("bytes read:", bytesRead)
-	fmt.Println("length expected:", length)
-	fmt.Printf("Buffer : %v\n", buf)
+	// fmt.Printf("Buffer : %v\n", buf)
 
 	return message.MustV0().Message
 }
