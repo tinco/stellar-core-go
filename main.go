@@ -43,6 +43,12 @@ func main() {
 				switch envelope.Statement.Pledges.Type {
 				case xdr.ScpStatementTypeScpStNominate:
 					qs = envelope.Statement.Pledges.MustNominate().QuorumSetHash
+				case xdr.ScpStatementTypeScpStExternalize:
+					qs = envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
+				case xdr.ScpStatementTypeScpStPrepare:
+					qs = envelope.Statement.Pledges.MustPrepare().QuorumSetHash
+				case xdr.ScpStatementTypeScpStConfirm:
+					qs = envelope.Statement.Pledges.MustConfirm().QuorumSetHash
 				}
 				_, exists := quorumSets[qs]
 				if !exists {
