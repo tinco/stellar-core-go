@@ -5,13 +5,17 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/stellar/go/xdr"
 	"github.com/tinco/stellar-core-go/nodeInfo"
 )
+
+type listener func(xdr.StellarMessage)
 
 // Peer represents a connection to a peer
 type Peer struct {
@@ -27,6 +31,8 @@ type Peer struct {
 	sendingMacKey   []byte
 
 	localNonce [32]byte
+
+	listeners map[xdr.MessageType]listener
 }
 
 // Connect to validator
@@ -37,12 +43,63 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	}
 
 	peer := Peer{
-		Conn: conn,
+		Conn:      conn,
+		listeners: make(map[xdr.MessageType]listener),
 	}
 
 	peer.startAuthentication(nodeInfo)
 
+	go peer.listen()
+
 	return &peer, nil
+}
+
+func (peer *Peer) listen() {
+	for {
+		message := peer.receiveMessage()
+		listener, ok := peer.listeners[message.Type]
+		if ok {
+			go listener(message)
+		} else {
+			// fmt.Printf("Received unsollicited message: %v\n\n", message)
+		}
+	}
+}
+
+func (peer *Peer) waitForMessage(typ xdr.MessageType) (*xdr.StellarMessage, error) {
+	messageChan := make(chan xdr.StellarMessage)
+	peer.listeners[typ] = func(message xdr.StellarMessage) {
+		// this is a race condition, subscribing from multiple goroutines is dangerous
+		delete(peer.listeners, message.Type)
+		messageChan <- message
+	}
+
+	select {
+	case message := <-messageChan:
+		return &message, nil
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("Waiting for message timed out")
+	}
+}
+
+// WaitForMessages listens for messages of the given type, returning a channel
+// that the messages are put on, as well as a channel that is used to indicate
+// we are done listening for messages.
+func (peer *Peer) WaitForMessages(typ xdr.MessageType) (chan xdr.StellarMessage, chan struct{}) {
+	messageChan := make(chan xdr.StellarMessage)
+	peer.listeners[typ] = func(message xdr.StellarMessage) {
+		messageChan <- message
+	}
+
+	doneChan := make(chan struct{})
+
+	go func() {
+		<-doneChan
+		// this is a race condition, subscribing from multiple goroutines is dangerous
+		delete(peer.listeners, typ)
+	}()
+
+	return messageChan, doneChan
 }
 
 func (peer *Peer) sendMessage(message xdr.StellarMessage) {
@@ -72,6 +129,8 @@ func (peer *Peer) sendMessage(message xdr.StellarMessage) {
 	peer.Conn.Write(messageBuffer.Bytes())
 }
 
+// Don't use for anything else than the handshake, as we can receive messages
+// out of band, use waitForMessage instead.
 func (peer *Peer) receiveMessage() xdr.StellarMessage {
 	length := peer.receiveHeader()
 	if length <= 0 {

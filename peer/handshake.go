@@ -65,7 +65,7 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 
 	peer.sendMessage(message)
 
-	peer.receiveMessage()
+	peer.receiveMessage().MustAuth()
 }
 
 func (peer *Peer) handleHello(hello xdr.Hello) {
@@ -75,8 +75,6 @@ func (peer *Peer) handleHello(hello xdr.Hello) {
 }
 
 func (peer *Peer) setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {
-	// fmt.Printf("remotePublicKey: %s\n", hex.EncodeToString(remotePublicKey[:]))
-
 	// Set up auth shared key
 	var publicA [32]byte
 	var publicB [32]byte
