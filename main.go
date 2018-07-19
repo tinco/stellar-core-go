@@ -12,8 +12,11 @@ func main() {
 
 	nodeInfo := nodeInfo.SetupCrypto()
 	// "stellar0.keybase.io:11625")
-	_, err := peer.Connect(&nodeInfo, "localhost:11625")
+	peer, err := peer.Connect(&nodeInfo, "localhost:11625")
 	if err != nil {
 		panic("Couldn't connect")
 	}
+
+	peerAddresses := peer.GetPeerAddresses()
+	fmt.Printf("Addresses: %v", peerAddresses)
 }

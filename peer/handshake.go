@@ -55,9 +55,6 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 	helloResponse := peer.receiveMessage().MustHello()
 	peer.handleHello(helloResponse)
 
-	// Print any responses
-	fmt.Printf("response: %+v\n\n", helloResponse)
-
 	// Auth is just an empty message with a valid mac
 	auth := xdr.Auth{}
 
@@ -68,8 +65,7 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 
 	peer.sendMessage(message)
 
-	authResponse := peer.receiveMessage()
-	fmt.Printf("response: %+v", authResponse)
+	peer.receiveMessage()
 }
 
 func (peer *Peer) handleHello(hello xdr.Hello) {
