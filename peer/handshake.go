@@ -1,4 +1,4 @@
-package handshake
+package peer
 
 import (
 	"bytes"
@@ -10,20 +10,19 @@ import (
 
 	"github.com/stellar/go/xdr"
 	"github.com/tinco/stellar-core-go/nodeInfo"
-	"github.com/tinco/stellar-core-go/peer"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/ed25519"
 )
 
-func setupCrypto(context *peer.PeerContext) {
-	rand.Read(context.LocalNonce[:])
-	rand.Read(context.AuthSecretKey[:])
+func (peer *Peer) setupCrypto() {
+	rand.Read(peer.localNonce[:])
+	rand.Read(peer.authSecretKey[:])
 	// Set up auth public key
-	curve25519.ScalarBaseMult(&context.AuthPublicKey, &context.AuthSecretKey)
+	curve25519.ScalarBaseMult(&peer.authPublicKey, &peer.authSecretKey)
 }
 
-func StartAuthentication(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext) {
-	setupCrypto(context)
+func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
+	peer.setupCrypto()
 
 	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, nodeInfo.PublicKey)
 	if err != nil {
@@ -31,7 +30,7 @@ func StartAuthentication(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext)
 		return
 	}
 
-	authCert := getAuthCert(nodeInfo, context)
+	authCert := peer.getAuthCert(nodeInfo)
 
 	// Send Hello message
 	hello := xdr.Hello{
@@ -43,7 +42,7 @@ func StartAuthentication(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext)
 		ListeningPort:     11625,
 		PeerId:            peerID,
 		Cert:              authCert,
-		Nonce:             xdr.Uint256(context.LocalNonce),
+		Nonce:             xdr.Uint256(peer.localNonce),
 	}
 
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeHello, hello)
@@ -51,10 +50,10 @@ func StartAuthentication(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext)
 		fmt.Println(err)
 	}
 
-	context.SendMessage(message)
+	peer.sendMessage(message)
 
-	helloResponse := context.ReceiveMessage().MustHello()
-	handleHello(context, helloResponse)
+	helloResponse := peer.receiveMessage().MustHello()
+	peer.handleHello(helloResponse)
 
 	// Print any responses
 	fmt.Printf("response: %+v\n\n", helloResponse)
@@ -67,19 +66,19 @@ func StartAuthentication(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext)
 		fmt.Println(err)
 	}
 
-	context.SendMessage(message)
+	peer.sendMessage(message)
 
-	authResponse := context.ReceiveMessage()
+	authResponse := peer.receiveMessage()
 	fmt.Printf("response: %+v", authResponse)
 }
 
-func handleHello(context *peer.PeerContext, hello xdr.Hello) {
+func (peer *Peer) handleHello(hello xdr.Hello) {
 	remotePublicKey := hello.Cert.Pubkey
 	remoteNonce := hello.Nonce
-	setupRemoteKeys(context, remotePublicKey.Key, remoteNonce, true)
+	peer.setupRemoteKeys(remotePublicKey.Key, remoteNonce, true)
 }
 
-func setupRemoteKeys(context *peer.PeerContext, remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {
+func (peer *Peer) setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {
 	// fmt.Printf("remotePublicKey: %s\n", hex.EncodeToString(remotePublicKey[:]))
 
 	// Set up auth shared key
@@ -87,21 +86,21 @@ func setupRemoteKeys(context *peer.PeerContext, remotePublicKey [32]byte, remote
 	var publicB [32]byte
 
 	if weCalled {
-		publicA = context.AuthPublicKey
+		publicA = peer.authPublicKey
 		publicB = remotePublicKey
 	} else {
 		publicA = remotePublicKey
-		publicB = context.AuthPublicKey
+		publicB = peer.authPublicKey
 	}
 
 	var q [32]byte
-	curve25519.ScalarMult(&q, &context.AuthSecretKey, &remotePublicKey)
+	curve25519.ScalarMult(&q, &peer.authSecretKey, &remotePublicKey)
 
 	buf := bytes.NewBuffer(q[:])
 	buf.Write(publicA[:])
 	buf.Write(publicB[:])
 
-	context.AuthSharedKey = hkdfExtract(buf.Bytes())
+	peer.authSharedKey = hkdfExtract(buf.Bytes())
 
 	// Set up sendingMacKey
 
@@ -116,10 +115,10 @@ func setupRemoteKeys(context *peer.PeerContext, remotePublicKey [32]byte, remote
 	} else {
 		buf.WriteByte(1)
 	}
-	buf.Write(context.LocalNonce[:])
+	buf.Write(peer.localNonce[:])
 	buf.Write(remoteNonce[:])
 
-	context.SendingMacKey = hkdfExpand(context.AuthSharedKey, buf)
+	peer.sendingMacKey = hkdfExpand(peer.authSharedKey, buf)
 
 	// Set up receivingMacKey
 	buf = &bytes.Buffer{}
@@ -130,9 +129,9 @@ func setupRemoteKeys(context *peer.PeerContext, remotePublicKey [32]byte, remote
 		buf.WriteByte(1)
 	}
 	buf.Write(remoteNonce[:])
-	buf.Write(context.LocalNonce[:])
+	buf.Write(peer.localNonce[:])
 
-	context.ReceivingMacKey = hkdfExpand(context.AuthSharedKey, buf)
+	peer.receivingMacKey = hkdfExpand(peer.authSharedKey, buf)
 }
 
 func hkdfExtract(buf []byte) []byte {
@@ -154,11 +153,11 @@ func sign(nodeInfo *nodeInfo.NodeInfo, hash [sha256.Size]byte) xdr.Signature {
 	return xdr.Signature(signature)
 }
 
-func getAuthCert(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext) xdr.AuthCert {
+func (peer *Peer) getAuthCert(nodeInfo *nodeInfo.NodeInfo) xdr.AuthCert {
 	now := time.Now().Unix()
 
-	if context.CachedAuthCert.Expiration > xdr.Uint64(now) {
-		return context.CachedAuthCert
+	if peer.cachedAuthCert.Expiration > xdr.Uint64(now) {
+		return peer.cachedAuthCert
 	}
 
 	expirationLimit := int64(3600) // one hour
@@ -169,21 +168,16 @@ func getAuthCert(nodeInfo *nodeInfo.NodeInfo, context *peer.PeerContext) xdr.Aut
 	xdr.Marshal(&messageDataBuffer, &nodeInfo.NetworkID)
 	xdr.Marshal(&messageDataBuffer, xdr.EnvelopeTypeEnvelopeTypeAuth)
 	xdr.Marshal(&messageDataBuffer, &expiration)
-	xdr.Marshal(&messageDataBuffer, &context.AuthPublicKey)
-
-	// fmt.Printf("AuthCertBytes: %s", hex.Dump(messageDataBuffer.Bytes()))
+	xdr.Marshal(&messageDataBuffer, &peer.authPublicKey)
 
 	hash := sha256.Sum256(messageDataBuffer.Bytes())
 	sig := sign(nodeInfo, hash)
 
-	// fmt.Printf("Hash: %s", hex.Dump(hash[:]))
-	// fmt.Printf("Sig: %s", hex.Dump(sig))
-
-	context.CachedAuthCert = xdr.AuthCert{
-		Pubkey:     xdr.Curve25519Public{Key: context.AuthPublicKey},
+	peer.cachedAuthCert = xdr.AuthCert{
+		Pubkey:     xdr.Curve25519Public{Key: peer.authPublicKey},
 		Expiration: xdr.Uint64(expiration),
 		Sig:        sig,
 	}
 
-	return context.CachedAuthCert
+	return peer.cachedAuthCert
 }

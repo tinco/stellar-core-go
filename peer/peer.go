@@ -10,40 +10,44 @@ import (
 	"net"
 
 	"github.com/stellar/go/xdr"
+	"github.com/tinco/stellar-core-go/nodeInfo"
 )
 
-type PeerContext struct {
+// Peer represents a connection to a peer
+type Peer struct {
 	Conn                net.Conn
 	sendMessageSequence xdr.Uint64
-	CachedAuthCert      xdr.AuthCert
+	cachedAuthCert      xdr.AuthCert
 
-	AuthSecretKey [32]byte
-	AuthPublicKey [32]byte
-	AuthSharedKey []byte
+	authSecretKey [32]byte
+	authPublicKey [32]byte
+	authSharedKey []byte
 
-	ReceivingMacKey []byte
-	SendingMacKey   []byte
+	receivingMacKey []byte
+	sendingMacKey   []byte
 
-	LocalNonce [32]byte
+	localNonce [32]byte
 }
 
-func Connect(address string) (*PeerContext, error) {
-	// Connect to validator
+// Connect to validator
+func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
 	}
 
-	context := PeerContext{
+	peer := Peer{
 		Conn: conn,
 	}
 
-	return &context, nil
+	peer.startAuthentication(nodeInfo)
+
+	return &peer, nil
 }
 
-func (context *PeerContext) SendMessage(message xdr.StellarMessage) {
+func (peer *Peer) sendMessage(message xdr.StellarMessage) {
 	am0 := xdr.AuthenticatedMessageV0{
-		Sequence: context.sendMessageSequence,
+		Sequence: peer.sendMessageSequence,
 		Message:  message,
 	}
 
@@ -51,12 +55,12 @@ func (context *PeerContext) SendMessage(message xdr.StellarMessage) {
 		buf := bytes.Buffer{}
 		xdr.Marshal(&buf, &am0.Sequence)
 		xdr.Marshal(&buf, &am0.Message)
-		hmac := hmac.New(sha256.New, context.SendingMacKey)
+		hmac := hmac.New(sha256.New, peer.sendingMacKey)
 		hmac.Write(buf.Bytes())
 		var mac [32]byte
 		copy(mac[:], hmac.Sum(nil))
 		am0.Mac = xdr.HmacSha256Mac{Mac: mac}
-		context.sendMessageSequence++
+		peer.sendMessageSequence++
 	}
 
 	am, _ := xdr.NewAuthenticatedMessage(xdr.Uint32(0), am0)
@@ -64,12 +68,12 @@ func (context *PeerContext) SendMessage(message xdr.StellarMessage) {
 	var messageBuffer bytes.Buffer
 	xdr.Marshal(&messageBuffer, &am)
 	outBytes := messageBuffer.Bytes()
-	context.sendHeader(uint32(len(outBytes)))
-	context.Conn.Write(messageBuffer.Bytes())
+	peer.sendHeader(uint32(len(outBytes)))
+	peer.Conn.Write(messageBuffer.Bytes())
 }
 
-func (context *PeerContext) ReceiveMessage() xdr.StellarMessage {
-	length := context.receiveHeader()
+func (peer *Peer) receiveMessage() xdr.StellarMessage {
+	length := peer.receiveHeader()
 	if length <= 0 {
 		fmt.Println("Got a length of 0 or smaller")
 	}
@@ -78,7 +82,7 @@ func (context *PeerContext) ReceiveMessage() xdr.StellarMessage {
 	bytesRead := 0
 	for {
 		tmp := make([]byte, length-bytesRead)
-		n, err := context.Conn.Read(tmp)
+		n, err := peer.Conn.Read(tmp)
 		bytesRead += n
 		if err != nil {
 			if err != io.EOF {
@@ -104,7 +108,7 @@ func (context *PeerContext) ReceiveMessage() xdr.StellarMessage {
 	return message.MustV0().Message
 }
 
-func (context *PeerContext) sendHeader(length uint32) {
+func (peer *Peer) sendHeader(length uint32) {
 	// In RPC (see RFC5531 section 11), the high bit means this is the
 	// last record fragment in a record.  If the high bit is clear, it
 	// means another fragment follows.  We don't currently implement
@@ -113,12 +117,12 @@ func (context *PeerContext) sendHeader(length uint32) {
 
 	header := make([]byte, 4)
 	binary.BigEndian.PutUint32(header, length|0x80000000)
-	context.Conn.Write(header)
+	peer.Conn.Write(header)
 }
 
-func (context *PeerContext) receiveHeader() int {
+func (peer *Peer) receiveHeader() int {
 	header := make([]byte, 4)
-	read, err := context.Conn.Read(header)
+	read, err := peer.Conn.Read(header)
 
 	if err != nil {
 		fmt.Println(err)
