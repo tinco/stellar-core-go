@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base32"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -11,34 +13,39 @@ import (
 	"github.com/tinco/stellar-core-go/peer"
 )
 
-var quorumSetHashes map[xdr.Hash]bool
+var quorumSetHashes map[xdr.Hash]string
+var p *peer.Peer
 
 func main() {
 	fmt.Println("Stellar Go Debug Client\n ")
 
-	quorumSetHashes = make(map[xdr.Hash]bool)
+	quorumSetHashes = make(map[xdr.Hash]string)
 
 	nodeInfo := nodeInfo.SetupCrypto()
 	// "stellar0.keybase.io:11625")
-	peer, err := peer.Connect(&nodeInfo, "localhost:11625")
+
+	var err error
+	p, err = peer.Connect(&nodeInfo, "localhost:11625")
 	if err != nil {
 		panic("Couldn't connect")
 	}
 
-	peer.OnMessage = func(message xdr.StellarMessage) {
+	p.OnMessage = func(message xdr.StellarMessage) {
 		switch message.Type {
 		case xdr.MessageTypePeers:
 			handlePeers(message)
 		case xdr.MessageTypeScpMessage:
 			handleSCPMessage(message)
+		case xdr.MessageTypeScpQuorumset:
+			handleScpQuorumSet(message)
 		default:
 			fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
 	}
 
-	peer.Start()
+	p.Start()
 
-	peer.GetPeerAddresses()
+	p.GetPeerAddresses()
 
 	for {
 		time.Sleep(100 * time.Millisecond)
@@ -60,11 +67,21 @@ func handlePeers(message xdr.StellarMessage) {
 		ip := net.IP(ipBytes).String()
 		peerAddresses[i] = ip + ":" + strconv.FormatUint(uint64(v.Port), 10)
 	}
-	fmt.Printf("Addresses: %v\n", peerAddresses)
+	fmt.Printf("Peer addresses: %v\n", peerAddresses)
 }
 
 func gotNewHash(hash xdr.Hash) {
-	fmt.Printf("Got new quorumSetHash: %v\n", hash)
+	fmt.Printf("Got new quorumSetHash: %v\n", quorumSetHashes[hash])
+	p.GetScpQuorumset(hash)
+}
+
+func handleScpQuorumSet(message xdr.StellarMessage) {
+	qs := message.MustQSet()
+	jsDump, err := json.Marshal(qs)
+	if err != nil {
+		fmt.Printf("Could not dump json of quorumset")
+	}
+	fmt.Printf("QuorumSet JSON: %s\n", jsDump)
 }
 
 func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
@@ -81,7 +98,8 @@ func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
 	}
 	_, exists := quorumSetHashes[qs]
 	if !exists {
-		quorumSetHashes[qs] = true
+		encoded := base32.StdEncoding.EncodeToString(qs[:])
+		quorumSetHashes[qs] = encoded
 		gotNewHash(qs)
 	}
 }
