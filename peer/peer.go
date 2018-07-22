@@ -5,12 +5,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/stellar/go/xdr"
 	"github.com/tinco/stellar-core-go/nodeInfo"
@@ -21,7 +19,7 @@ type listener func(xdr.StellarMessage)
 // Peer represents a connection to a peer
 type Peer struct {
 	sendMutex           sync.Mutex
-	Conn                net.Conn
+	conn                net.Conn
 	nodeInfo            *nodeInfo.NodeInfo
 	sendMessageSequence xdr.Uint64
 	cachedAuthCert      xdr.AuthCert
@@ -35,11 +33,8 @@ type Peer struct {
 
 	localNonce [32]byte
 
-	listeners       map[xdr.MessageType]listener
-	quorumSetHashes map[xdr.Hash]bool
-
-	// OnQuorumSetHash is triggered when the peer sees a new QuorumSetHash
-	OnQuorumSetHash func(xdr.Hash)
+	// OnMessage is triggered when the peer receives a message
+	OnMessage func(xdr.StellarMessage)
 }
 
 // Connect returns a peer that manages a connection to a stellar-core node
@@ -50,11 +45,9 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	}
 
 	peer := Peer{
-		Conn:            conn,
-		nodeInfo:        nodeInfo,
-		listeners:       make(map[xdr.MessageType]listener),
-		quorumSetHashes: make(map[xdr.Hash]bool),
-		OnQuorumSetHash: func(hash xdr.Hash) {},
+		conn:      conn,
+		nodeInfo:  nodeInfo,
+		OnMessage: func(_ xdr.StellarMessage) {},
 	}
 
 	return &peer, nil
@@ -63,56 +56,15 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 // Start logs the peer in to the node and starts processing messages
 func (peer *Peer) Start() {
 	peer.startAuthentication(peer.nodeInfo)
-	peer.listenForSCPMessages()
-	go peer.listen()
-}
-
-func (peer *Peer) listen() {
-	for {
-		message := peer.receiveMessage()
-		listener, ok := peer.listeners[message.Type]
-		if ok {
-			listener(message)
-		} else {
-			fmt.Printf("Received unsollicited message: %v\n", message)
-		}
-	}
-}
-
-func (peer *Peer) waitForMessage(typ xdr.MessageType) (*xdr.StellarMessage, error) {
-	messageChan := make(chan xdr.StellarMessage)
-	peer.listeners[typ] = func(message xdr.StellarMessage) {
-		// this is a race condition, subscribing from multiple goroutines is dangerous
-		delete(peer.listeners, message.Type)
-		messageChan <- message
-	}
-
-	select {
-	case message := <-messageChan:
-		return &message, nil
-	case <-time.After(5 * time.Second):
-		return nil, errors.New("Waiting for message timed out")
-	}
-}
-
-// WaitForMessages listens for messages of the given type, returning a channel
-// that the messages are put on, as well as a channel that is used to indicate
-// we are done listening for messages.
-func (peer *Peer) WaitForMessages(typ xdr.MessageType) (chan xdr.StellarMessage, chan struct{}) {
-	messageChan := make(chan xdr.StellarMessage)
-	peer.listeners[typ] = func(message xdr.StellarMessage) {
-		messageChan <- message
-	}
-
-	doneChan := make(chan struct{})
 
 	go func() {
-		<-doneChan
-		// this is a race condition, subscribing from multiple goroutines is dangerous
-		delete(peer.listeners, typ)
+		for {
+			// fmt.Printf("Waiting for message..")
+			message := peer.receiveMessage()
+			// fmt.Printf("got message: %v\n", message.Type)
+			peer.OnMessage(message)
+		}
 	}()
-
-	return messageChan, doneChan
 }
 
 func (peer *Peer) sendMessage(message xdr.StellarMessage) {
@@ -142,7 +94,7 @@ func (peer *Peer) sendMessage(message xdr.StellarMessage) {
 	xdr.Marshal(&messageBuffer, &am)
 	outBytes := messageBuffer.Bytes()
 	peer.sendHeader(uint32(len(outBytes)))
-	peer.Conn.Write(messageBuffer.Bytes())
+	peer.conn.Write(messageBuffer.Bytes())
 }
 
 // Don't use for anything else than the handshake, as we can receive messages
@@ -157,7 +109,7 @@ func (peer *Peer) receiveMessage() xdr.StellarMessage {
 	bytesRead := 0
 	for {
 		tmp := make([]byte, length-bytesRead)
-		n, err := peer.Conn.Read(tmp)
+		n, err := peer.conn.Read(tmp)
 		bytesRead += n
 		if err != nil {
 			if err != io.EOF {
@@ -190,12 +142,12 @@ func (peer *Peer) sendHeader(length uint32) {
 
 	header := make([]byte, 4)
 	binary.BigEndian.PutUint32(header, length|0x80000000)
-	peer.Conn.Write(header)
+	peer.conn.Write(header)
 }
 
 func (peer *Peer) receiveHeader() int {
 	header := make([]byte, 4)
-	read, err := peer.Conn.Read(header)
+	read, err := peer.conn.Read(header)
 
 	if err != nil {
 		fmt.Println(err)
