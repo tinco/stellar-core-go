@@ -4,8 +4,6 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/stellar/go/xdr"
@@ -32,42 +30,20 @@ func main() {
 
 	p.OnMessage = func(message xdr.StellarMessage) {
 		switch message.Type {
-		case xdr.MessageTypePeers:
-			handlePeers(message)
 		case xdr.MessageTypeScpMessage:
 			handleSCPMessage(message)
 		case xdr.MessageTypeScpQuorumset:
 			handleScpQuorumSet(message)
 		default:
-			fmt.Printf("Unsolicited message: %v\n", message.Type)
+			// fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
 	}
 
 	p.Start()
 
-	p.GetPeerAddresses()
-
 	for {
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-func handlePeers(message xdr.StellarMessage) {
-	peers := message.MustPeers()
-	peerAddresses := make([]string, len(peers))
-	for i, v := range peers {
-		var ipBytes []byte
-		if v.Ip.Type.String() == "IpAddrTypeIPv4" {
-			bytes := v.Ip.MustIpv4()
-			ipBytes = bytes[:]
-		} else {
-			bytes := v.Ip.MustIpv6()
-			ipBytes = bytes[:]
-		}
-		ip := net.IP(ipBytes).String()
-		peerAddresses[i] = ip + ":" + strconv.FormatUint(uint64(v.Port), 10)
-	}
-	fmt.Printf("Peer addresses: %v\n", peerAddresses)
 }
 
 func gotNewHash(hash xdr.Hash) {
@@ -109,6 +85,6 @@ func handleSCPMessage(message xdr.StellarMessage) {
 	if ok {
 		trackQuorumSetHashes(envelope)
 	} else {
-		fmt.Printf("Got some unexpected SCP message type: %v", message)
+		fmt.Printf("{ \"error\": \"Got some unexpected SCP message type: %v\"}\n", message)
 	}
 }
