@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/stellar/go/xdr"
@@ -19,7 +20,9 @@ type listener func(xdr.StellarMessage)
 
 // Peer represents a connection to a peer
 type Peer struct {
+	sendMutex           sync.Mutex
 	Conn                net.Conn
+	nodeInfo            *nodeInfo.NodeInfo
 	sendMessageSequence xdr.Uint64
 	cachedAuthCert      xdr.AuthCert
 
@@ -32,10 +35,14 @@ type Peer struct {
 
 	localNonce [32]byte
 
-	listeners map[xdr.MessageType]listener
+	listeners       map[xdr.MessageType]listener
+	quorumSetHashes map[xdr.Hash]bool
+
+	// OnQuorumSetHash is triggered when the peer sees a new QuorumSetHash
+	OnQuorumSetHash func(xdr.Hash)
 }
 
-// Connect to validator
+// Connect returns a peer that manages a connection to a stellar-core node
 func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
@@ -43,15 +50,21 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	}
 
 	peer := Peer{
-		Conn:      conn,
-		listeners: make(map[xdr.MessageType]listener),
+		Conn:            conn,
+		nodeInfo:        nodeInfo,
+		listeners:       make(map[xdr.MessageType]listener),
+		quorumSetHashes: make(map[xdr.Hash]bool),
+		OnQuorumSetHash: func(hash xdr.Hash) {},
 	}
 
-	peer.startAuthentication(nodeInfo)
-
-	go peer.listen()
-
 	return &peer, nil
+}
+
+// Start logs the peer in to the node and starts processing messages
+func (peer *Peer) Start() {
+	peer.startAuthentication(peer.nodeInfo)
+	peer.listenForSCPMessages()
+	go peer.listen()
 }
 
 func (peer *Peer) listen() {
@@ -59,9 +72,9 @@ func (peer *Peer) listen() {
 		message := peer.receiveMessage()
 		listener, ok := peer.listeners[message.Type]
 		if ok {
-			go listener(message)
+			listener(message)
 		} else {
-			// fmt.Printf("Received unsollicited message: %v\n\n", message)
+			fmt.Printf("Received unsollicited message: %v\n", message)
 		}
 	}
 }
@@ -103,12 +116,15 @@ func (peer *Peer) WaitForMessages(typ xdr.MessageType) (chan xdr.StellarMessage,
 }
 
 func (peer *Peer) sendMessage(message xdr.StellarMessage) {
+	peer.sendMutex.Lock()
+	defer peer.sendMutex.Unlock()
+
 	am0 := xdr.AuthenticatedMessageV0{
 		Sequence: peer.sendMessageSequence,
 		Message:  message,
 	}
 
-	if message.Type != xdr.MessageTypeHello {
+	if message.Type != xdr.MessageTypeHello && message.Type != xdr.MessageTypeErrorMsg {
 		buf := bytes.Buffer{}
 		xdr.Marshal(&buf, &am0.Sequence)
 		xdr.Marshal(&buf, &am0.Message)
@@ -161,8 +177,6 @@ func (peer *Peer) receiveMessage() xdr.StellarMessage {
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	// fmt.Printf("Buffer : %v\n", buf)
 
 	return message.MustV0().Message
 }

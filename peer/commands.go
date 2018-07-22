@@ -37,8 +37,8 @@ func (peer *Peer) GetPeerAddresses() []string {
 }
 
 // GetTxSet gets the transaction set
-func (peer *Peer) GetTxSet() xdr.TransactionSet {
-	command := 0
+func (peer *Peer) GetTxSet(hash xdr.Hash) xdr.TransactionSet {
+	command := xdr.Uint256(hash)
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeGetTxSet, command)
 	if err != nil {
 		fmt.Println(err)
@@ -61,8 +61,8 @@ func (peer *Peer) AnnounceTransaction(tx xdr.Transaction) {
 }
 
 // GetScpQuorumset gets scp quorum set
-func (peer *Peer) GetScpQuorumset() xdr.ScpQuorumSet {
-	command := xdr.Uint256{0}
+func (peer *Peer) GetScpQuorumset(hash xdr.Hash) xdr.ScpQuorumSet {
+	command := xdr.Uint256(hash)
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeGetScpQuorumset, command)
 	if err != nil {
 		fmt.Println(err)
