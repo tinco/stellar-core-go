@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -15,15 +17,14 @@ import (
 var p *peer.Peer
 
 func main() {
-	fmt.Println("Getting peers..\n ")
-
 	nodeInfo := nodeInfo.SetupCrypto()
-	// "stellar0.keybase.io:11625")
+
+	peerAddress := os.Args[1]
 
 	var err error
-	p, err = peer.Connect(&nodeInfo, "localhost:11625")
+	p, err = peer.Connect(&nodeInfo, peerAddress)
 	if err != nil {
-		panic("Couldn't connect")
+		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
 	p.OnMessage = func(message xdr.StellarMessage) {
@@ -37,11 +38,10 @@ func main() {
 	}
 
 	p.Start()
+	p.MustRespond()
 	p.GetPeerAddresses()
-
-	for {
-		time.Sleep(100 * time.Millisecond)
-	}
+	time.Sleep(3000 * time.Millisecond)
+	log.Fatal("Peer did not respond within 3 seconds")
 }
 
 func handlePeers(message xdr.StellarMessage) {
@@ -59,5 +59,9 @@ func handlePeers(message xdr.StellarMessage) {
 		ip := net.IP(ipBytes).String()
 		peerAddresses[i] = ip + ":" + strconv.FormatUint(uint64(v.Port), 10)
 	}
-	fmt.Printf("Peer addresses: %v\n", peerAddresses)
+	addressesJSON, err := json.MarshalIndent(peerAddresses, "", "    ")
+	if err != nil {
+		log.Fatal("Could not marshal peer addresses into json.")
+	}
+	fmt.Println(string(addressesJSON))
 }

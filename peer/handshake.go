@@ -52,6 +52,7 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 
 	peer.sendMessage(message)
 
+	peer.MustRespond()
 	helloResponse := peer.receiveMessage().MustHello()
 	peer.handleHello(helloResponse)
 
@@ -65,6 +66,7 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 
 	peer.sendMessage(message)
 
+	peer.MustRespond()
 	peer.receiveMessage().MustAuth()
 }
 
