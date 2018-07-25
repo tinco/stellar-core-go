@@ -32,14 +32,15 @@ func main() {
 		case xdr.MessageTypePeers:
 			handlePeers(message)
 			os.Exit(0)
+		case xdr.MessageTypeErrorMsg:
+			err := message.MustError()
+			log.Fatal("Got error message: %s", err.Msg)
 		default:
 			// fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
 	}
 
 	p.Start()
-	p.MustRespond()
-	p.GetPeerAddresses()
 	time.Sleep(3000 * time.Millisecond)
 	log.Fatal("Peer did not respond within 3 seconds")
 }

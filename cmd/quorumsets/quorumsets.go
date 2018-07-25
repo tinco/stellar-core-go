@@ -4,6 +4,8 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/stellar/go/xdr"
@@ -20,12 +22,13 @@ func main() {
 	quorumSetHashes = make(map[xdr.Hash]string)
 
 	nodeInfo := nodeInfo.SetupCrypto()
-	// "stellar0.keybase.io:11625")
+
+	peerAddress := os.Args[1]
 
 	var err error
-	p, err = peer.Connect(&nodeInfo, "localhost:11625")
+	p, err = peer.Connect(&nodeInfo, peerAddress)
 	if err != nil {
-		panic("Couldn't connect")
+		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
 	p.OnMessage = func(message xdr.StellarMessage) {
@@ -34,8 +37,14 @@ func main() {
 			handleSCPMessage(message)
 		case xdr.MessageTypeScpQuorumset:
 			handleScpQuorumSet(message)
+		case xdr.MessageTypeErrorMsg:
+			err := message.MustError()
+			fmt.Printf("Got error message: %s\n", err.Msg)
+		case xdr.MessageTypeDontHave:
+			dontHave := message.MustDontHave()
+			fmt.Printf("Received donthave: %v, %v", dontHave.ReqHash, dontHave.Type)
 		default:
-			// fmt.Printf("Unsolicited message: %v\n", message.Type)
+			//fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
 	}
 
@@ -47,7 +56,6 @@ func main() {
 }
 
 func gotNewHash(hash xdr.Hash) {
-	fmt.Printf("Got new quorumSetHash: %v\n", quorumSetHashes[hash])
 	p.GetScpQuorumset(hash)
 }
 
@@ -57,26 +65,18 @@ func handleScpQuorumSet(message xdr.StellarMessage) {
 	if err != nil {
 		fmt.Printf("Could not dump json of quorumset")
 	}
-	fmt.Printf("QuorumSet JSON: %s\n", jsDump)
+	fmt.Println(string(jsDump))
 }
 
 func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
-	var qs xdr.Hash
-	switch envelope.Statement.Pledges.Type {
-	case xdr.ScpStatementTypeScpStNominate:
-		qs = envelope.Statement.Pledges.MustNominate().QuorumSetHash
-	case xdr.ScpStatementTypeScpStExternalize:
-		qs = envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
-	case xdr.ScpStatementTypeScpStPrepare:
-		qs = envelope.Statement.Pledges.MustPrepare().QuorumSetHash
-	case xdr.ScpStatementTypeScpStConfirm:
-		qs = envelope.Statement.Pledges.MustConfirm().QuorumSetHash
-	}
-	_, exists := quorumSetHashes[qs]
-	if !exists {
-		encoded := base32.StdEncoding.EncodeToString(qs[:])
-		quorumSetHashes[qs] = encoded
-		gotNewHash(qs)
+	if envelope.Statement.Pledges.Type == xdr.ScpStatementTypeScpStExternalize {
+		qs := envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
+		_, exists := quorumSetHashes[qs]
+		if !exists {
+			encoded := base32.StdEncoding.EncodeToString(qs[:])
+			quorumSetHashes[qs] = encoded
+			gotNewHash(qs)
+		}
 	}
 }
 
