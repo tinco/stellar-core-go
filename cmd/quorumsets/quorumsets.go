@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/stellar/go/strkey"
 	"github.com/stellar/go/xdr"
 	"github.com/tinco/stellar-core-go/nodeInfo"
 	"github.com/tinco/stellar-core-go/peer"
@@ -61,11 +62,39 @@ func gotNewHash(hash xdr.Hash) {
 
 func handleScpQuorumSet(message xdr.StellarMessage) {
 	qs := message.MustQSet()
-	jsDump, err := json.Marshal(qs)
+	prepared := prepQuorumSet(qs)
+	jsDump, err := json.Marshal(prepared)
 	if err != nil {
 		fmt.Printf("Could not dump json of quorumset")
 	}
 	fmt.Println(string(jsDump))
+}
+
+func prepQuorumSet(qs xdr.ScpQuorumSet) interface{} {
+	validators := qs.Validators
+	innerSets := qs.InnerSets
+	threshold := qs.Threshold
+
+	data := make(map[string]interface{})
+	vals := make([]string, len(validators))
+
+	for i, v := range validators {
+		pk := v.MustEd25519()
+		pks, _ := strkey.Encode(strkey.VersionByteAccountID, pk[:])
+		vals[i] = pks
+	}
+
+	data["threshold"] = threshold
+	data["validators"] = vals
+
+	ins := make([]interface{}, len(innerSets))
+	for i, v := range innerSets {
+		ins[i] = prepQuorumSet(v)
+	}
+
+	data["inner_sets"] = ins
+
+	return data
 }
 
 func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
