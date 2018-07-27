@@ -32,7 +32,7 @@ func main() {
 		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
-	p.OnMessage = func(message xdr.StellarMessage) {
+	p.OnMessage = func(message *xdr.StellarMessage) {
 		switch message.Type {
 		case xdr.MessageTypeScpMessage:
 			handleSCPMessage(message)
@@ -60,7 +60,7 @@ func gotNewHash(hash xdr.Hash) {
 	p.GetScpQuorumset(hash)
 }
 
-func handleScpQuorumSet(message xdr.StellarMessage) {
+func handleScpQuorumSet(message *xdr.StellarMessage) {
 	qs := message.MustQSet()
 	prepared := prepQuorumSet(qs)
 	jsDump, err := json.Marshal(prepared)
@@ -109,7 +109,7 @@ func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
 	}
 }
 
-func handleSCPMessage(message xdr.StellarMessage) {
+func handleSCPMessage(message *xdr.StellarMessage) {
 	envelope, ok := message.GetEnvelope()
 	if ok {
 		trackQuorumSetHashes(envelope)

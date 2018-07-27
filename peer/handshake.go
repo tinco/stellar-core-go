@@ -21,13 +21,12 @@ func (peer *Peer) setupCrypto() {
 	curve25519.ScalarBaseMult(&peer.authPublicKey, &peer.authSecretKey)
 }
 
-func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
+func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) error {
 	peer.setupCrypto()
 
 	peerID, err := xdr.NewNodeId(xdr.PublicKeyTypePublicKeyTypeEd25519, nodeInfo.PublicKey)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	authCert := peer.getAuthCert(nodeInfo)
@@ -47,13 +46,19 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeHello, hello)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 
 	peer.sendMessage(message)
 
 	peer.MustRespond()
-	helloResponse := peer.receiveMessage().MustHello()
+	helloResponseMessage, err := peer.receiveMessage()
+	if err != nil {
+		return err
+	}
+
+	helloResponse := helloResponseMessage.MustHello()
+
 	peer.handleHello(helloResponse)
 
 	// Auth is just an empty message with a valid mac
@@ -67,13 +72,19 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) {
 	peer.sendMessage(message)
 
 	peer.MustRespond()
-	peer.receiveMessage().MustAuth()
+	authMessage, err := peer.receiveMessage()
+	if err != nil {
+		fmt.Println(err)
+	}
+	authMessage.MustAuth()
+	return nil
 }
 
 func (peer *Peer) handleHello(hello xdr.Hello) {
 	remotePublicKey := hello.Cert.Pubkey
 	remoteNonce := hello.Nonce
 	peer.setupRemoteKeys(remotePublicKey.Key, remoteNonce, true)
+	peer.PeerInfo = &hello
 }
 
 func (peer *Peer) setupRemoteKeys(remotePublicKey [32]byte, remoteNonce [32]byte, weCalled bool) {

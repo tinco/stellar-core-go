@@ -5,9 +5,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -36,7 +36,10 @@ type Peer struct {
 	localNonce [32]byte
 
 	// OnMessage is triggered when the peer receives a message
-	OnMessage func(xdr.StellarMessage)
+	OnMessage func(*xdr.StellarMessage)
+
+	// PeerInfo contains information about the connected peer
+	PeerInfo *xdr.Hello
 }
 
 // Connect returns a peer that manages a connection to a stellar-core node
@@ -49,7 +52,7 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 	peer := Peer{
 		conn:      conn,
 		nodeInfo:  nodeInfo,
-		OnMessage: func(_ xdr.StellarMessage) {},
+		OnMessage: func(_ *xdr.StellarMessage) {},
 	}
 
 	return &peer, nil
@@ -62,7 +65,10 @@ func (peer *Peer) Start() {
 	go func() {
 		for {
 			// fmt.Printf("Waiting for message..")
-			message := peer.receiveMessage()
+			message, err := peer.receiveMessage()
+			if err != nil {
+				break
+			}
 			// fmt.Printf("got message: %v\n", message.Type)
 			peer.OnMessage(message)
 		}
@@ -107,12 +113,11 @@ func (peer *Peer) sendMessage(message xdr.StellarMessage) {
 	peer.conn.Write(messageBuffer.Bytes())
 }
 
-func (peer *Peer) receiveMessage() xdr.StellarMessage {
-	length := peer.receiveHeader()
-	if length <= 0 {
-		fmt.Println("Got a length of 0 or smaller")
+func (peer *Peer) receiveMessage() (*xdr.StellarMessage, error) {
+	length, err := peer.receiveHeader()
+	if err != nil {
+		return nil, err
 	}
-
 	buf := make([]byte, 0, length)
 	bytesRead := 0
 	for {
@@ -121,7 +126,7 @@ func (peer *Peer) receiveMessage() xdr.StellarMessage {
 		bytesRead += n
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error:", err)
+				return nil, err
 			}
 			break
 		}
@@ -133,14 +138,15 @@ func (peer *Peer) receiveMessage() xdr.StellarMessage {
 	}
 
 	var message xdr.AuthenticatedMessage
-	_, err := xdr.Unmarshal(bytes.NewReader(buf), &message)
+	_, err = xdr.Unmarshal(bytes.NewReader(buf), &message)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
 	// Reset the deadline, since we received a message
 	peer.conn.SetReadDeadline(time.Time{})
-	return message.MustV0().Message
+	m := message.MustV0().Message
+	return &m, nil
 }
 
 func (peer *Peer) sendHeader(length uint32) {
@@ -155,17 +161,16 @@ func (peer *Peer) sendHeader(length uint32) {
 	peer.conn.Write(header)
 }
 
-func (peer *Peer) receiveHeader() int {
+func (peer *Peer) receiveHeader() (int, error) {
 	header := make([]byte, 4)
 	read, err := peer.conn.Read(header)
 
 	if err != nil {
-		fmt.Println(err)
+		return 0, err
 	}
 
 	if read != 4 {
-		fmt.Println("Tried to receive header, but didn't get 4 bytes", read)
-		log.Fatal("Receive Header failed")
+		return 0, errors.New(fmt.Sprintf("Tried to receive header, got %v instead of 4 bytes", read))
 	}
 
 	length := 0
@@ -177,5 +182,5 @@ func (peer *Peer) receiveHeader() int {
 	length |= int(header[2])
 	length <<= 8
 	length |= int(header[3])
-	return length
+	return length, nil
 }

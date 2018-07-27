@@ -27,14 +27,14 @@ func main() {
 		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
-	p.OnMessage = func(message xdr.StellarMessage) {
+	p.OnMessage = func(message *xdr.StellarMessage) {
 		switch message.Type {
 		case xdr.MessageTypePeers:
 			handlePeers(message)
 			os.Exit(0)
 		case xdr.MessageTypeErrorMsg:
 			err := message.MustError()
-			log.Fatal("Got error message: %s", err.Msg)
+			log.Fatal("Got error message: ", err.Msg)
 		default:
 			// fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
@@ -45,7 +45,7 @@ func main() {
 	log.Fatal("Peer did not respond within 3 seconds")
 }
 
-func handlePeers(message xdr.StellarMessage) {
+func handlePeers(message *xdr.StellarMessage) {
 	peers := message.MustPeers()
 	peerAddresses := make([]string, len(peers))
 	for i, v := range peers {
