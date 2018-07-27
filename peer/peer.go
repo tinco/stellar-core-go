@@ -79,7 +79,7 @@ func (peer *Peer) sendMessage(message xdr.StellarMessage) {
 	peer.sendMutex.Lock()
 	defer peer.sendMutex.Unlock()
 	peer.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-	defer func() { peer.conn.SetWriteDeadline(time.Time{}) }()
+	defer peer.conn.SetWriteDeadline(time.Time{})
 
 	am0 := xdr.AuthenticatedMessageV0{
 		Sequence: peer.sendMessageSequence,
