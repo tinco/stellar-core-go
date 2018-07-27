@@ -25,7 +25,7 @@ func main() {
 	var err error
 	p, err = peer.Connect(&nodeInfo, peerAddress)
 	if err != nil {
-		fmt.Printf("{ \"error\": \"%s\"}", err.Error())
+		fmt.Printf("{ \"error\": \"%s\"}\n", err.Error())
 		return
 	}
 
@@ -35,7 +35,8 @@ func main() {
 			handleConnectionStart(message)
 		case xdr.MessageTypeErrorMsg:
 			err := message.MustError()
-			fmt.Printf("{ \"error\": \"%s\"}", err.Msg)
+			fmt.Printf("{ \"error\": \"%s\"}\n", err.Msg)
+			os.Exit(0)
 		default:
 			// fmt.Printf("Unsolicited message: %v\n", message.Type)
 		}
@@ -43,7 +44,7 @@ func main() {
 
 	p.Start()
 	time.Sleep(3 * time.Second)
-	fmt.Printf("{ \"ok\": \"Stopped listening after 3 seconds\"}")
+	fmt.Printf("{ \"ok\": \"Stopped listening after 3 seconds\"}\n")
 }
 
 func handleConnectionStart(message *xdr.StellarMessage) {
