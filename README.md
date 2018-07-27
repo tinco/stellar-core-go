@@ -62,6 +62,10 @@ This project contains some commands used for crawling the Stellar-Core network a
 
 Run `./bin/peers <somenode>:<itsport>` to get a list of peers this node connects to.
 
+### `bin/peer_info`
+
+Run `./bin/peer_info <somenode>:<itsport>` to get a list of peers this node connects to as well as more information about this peer. Its result is two json objects, the first has information about the peer, the second is a message whether this node rejected or accepted the connection.
+
 ### `bin/quorumsets`
 
 Run `./bin/quorumsets <somenode>:<itsport>` to get a stream of json objects with the quorumsets this node receives SCP messages from.
@@ -72,6 +76,6 @@ Run `./get_all_peers.rb` to recursively discover all of the peers on the network
 
 ## Motivation
 
-This project is being developed as part of an effort to establish insight into the Stellar-Core network as suggested by the 7th Stellar Build challenge's project idea of "Building a better Quorum Explorer". 
+This project is being developed as part of an effort to establish insight into the Stellar-Core network as suggested by the 7th Stellar Build challenge's project idea of "Building a better Quorum Explorer".
 
 If you got any questions, ideas, suggestions or large piles of Lumens to send, please contact me at https://keybase.io/tinco
