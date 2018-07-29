@@ -18,7 +18,7 @@ var quorumSetHashes map[xdr.Hash]string
 var p *peer.Peer
 
 func main() {
-	fmt.Println("Stellar Go Debug Client\n ")
+	log.Println("Stellar Go Debug Client\n ")
 
 	quorumSetHashes = make(map[xdr.Hash]string)
 
@@ -32,27 +32,34 @@ func main() {
 		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
+	quorumSetMessagesChan := make(chan string, 1)
+
 	p.OnMessage = func(message *xdr.StellarMessage) {
 		switch message.Type {
 		case xdr.MessageTypeScpMessage:
 			handleSCPMessage(message)
 		case xdr.MessageTypeScpQuorumset:
-			handleScpQuorumSet(message)
+			quorumSetMessagesChan <- handleScpQuorumSet(message)
 		case xdr.MessageTypeErrorMsg:
 			err := message.MustError()
-			fmt.Printf("Got error message: %s\n", err.Msg)
+			log.Printf("Got error message: %s\n", err.Msg)
 		case xdr.MessageTypeDontHave:
 			dontHave := message.MustDontHave()
-			fmt.Printf("Received donthave: %v, %v", dontHave.ReqHash, dontHave.Type)
+			log.Printf("Received donthave: %v, %v\n", dontHave.ReqHash, dontHave.Type)
 		default:
-			//fmt.Printf("Unsolicited message: %v\n", message.Type)
+			//log.Printf("Unsolicited message: %v\n", message.Type)
 		}
 	}
 
 	p.Start()
 
 	for {
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case qs := <- quorumSetMessagesChan:
+			fmt.Println(qs)
+		case <-time.After(30*time.Second):
+			os.Exit(0)
+		}
 	}
 }
 
@@ -60,14 +67,14 @@ func gotNewHash(hash xdr.Hash) {
 	p.GetScpQuorumset(hash)
 }
 
-func handleScpQuorumSet(message *xdr.StellarMessage) {
+func handleScpQuorumSet(message *xdr.StellarMessage) string {
 	qs := message.MustQSet()
 	prepared := prepQuorumSet(qs)
 	jsDump, err := json.Marshal(prepared)
 	if err != nil {
-		fmt.Printf("Could not dump json of quorumset")
+		log.Fatal("Could not dump json of quorumset")
 	}
-	fmt.Println(string(jsDump))
+	return string(jsDump)
 }
 
 func prepQuorumSet(qs xdr.ScpQuorumSet) interface{} {
