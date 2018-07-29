@@ -20,7 +20,7 @@ def check_peers(next_peer)
         $available_peers[next_peer] = true
         $peers += (more_peers - $checked_peers.keys)
         $peers.uniq!
-        puts "Connected to: #{next_peer}, #{$peers.count} peers left"
+        $STDERR.puts "Connected to: #{next_peer}, #{$peers.count} peers left"
       end
     end
     next_peer = $peers.pop
@@ -30,7 +30,7 @@ end
 initial_peer = "stellar0.keybase.io:11625"
 $peers = get_peers(initial_peer)
 
-puts "Starting 100 threads:\n"
+$STDERR.puts "Starting 100 threads:\n"
 
 100.times.map do |_|
   Thread.new do
@@ -39,5 +39,9 @@ puts "Starting 100 threads:\n"
   end
 end.each(&:join)
 
-puts "\nDone."
-puts "Got #{$checked_peers.count} peers. Of which #{$available_peers.count} were available:\n#{$available_peers.keys.join("\n")}"
+result = {
+  checked_peers_count: $checked_peers.count,
+  available_peers: $available_peers.keys
+}
+
+puts JSON.dump(result)
