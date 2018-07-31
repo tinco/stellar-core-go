@@ -55,20 +55,22 @@ func main() {
 
 	for {
 		select {
-		case qs := <- quorumSetMessagesChan:
+		case qs := <-quorumSetMessagesChan:
 			fmt.Println(qs)
-		case <-time.After(30*time.Second):
+		case <-time.After(30 * time.Second):
 			os.Exit(0)
 		}
 	}
 }
 
 func gotNewHash(hash xdr.Hash) {
+	log.Printf("Requesting qset: %s", hash)
 	p.GetScpQuorumset(hash)
 }
 
 func handleScpQuorumSet(message *xdr.StellarMessage) string {
 	qs := message.MustQSet()
+	log.Printf("Received qset: %s", *message.QSetHash)
 	prepared := prepQuorumSet(qs)
 	jsDump, err := json.Marshal(prepared)
 	if err != nil {
