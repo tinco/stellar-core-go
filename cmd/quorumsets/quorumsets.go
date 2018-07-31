@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base32"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,7 +19,7 @@ var quorumSetHashes map[xdr.Hash]string
 var p *peer.Peer
 
 func main() {
-	log.Println("Stellar Go Debug Client\n ")
+	log.Println("Stellar Go Debug Client")
 
 	quorumSetHashes = make(map[xdr.Hash]string)
 
@@ -64,13 +65,13 @@ func main() {
 }
 
 func gotNewHash(hash xdr.Hash) {
-	log.Printf("Requesting qset: %s", hash)
+	log.Printf("Requesting qset: %s", hex.EncodeToString(hash[:]))
 	p.GetScpQuorumset(hash)
 }
 
 func handleScpQuorumSet(message *xdr.StellarMessage) string {
 	qs := message.MustQSet()
-	log.Printf("Received qset: %s", *message.QSetHash)
+	log.Printf("Received qset")
 	prepared := prepQuorumSet(qs)
 	jsDump, err := json.Marshal(prepared)
 	if err != nil {
