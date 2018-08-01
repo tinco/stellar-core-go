@@ -12,4 +12,13 @@ nodes = proc do
   eval response.gsub("module.exports =","")
 end.call
 
-puts JSON.dump(nodes)
+known_validators = {}
+
+nodes.each do |n|
+  known_validators[n[:publicKey]] = n
+  n.delete(:publicKey)
+end
+
+raise "Double Public Key entry" unless nodes.count == known_validators.count
+
+puts JSON.dump(known_validators)
