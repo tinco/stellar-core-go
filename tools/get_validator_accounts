@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+
+require 'open-uri'
+require 'json'
+
+def get_account_info(public_key)
+  account_url = "https://horizon.stellar.org/accounts/#{public_key}"
+
+  STDERR.puts "Getting #{account_url}"
+  begin
+    home_domain = JSON.load(open(account_url).read)["home_domain"]
+  rescue => e
+    STDERR.puts("Could not get home domain: #{e.message}")
+    return nil
+  end
+
+  account_info = {
+    "home_domain" => home_domain
+  }
+
+  home_url = "https://#{home_domain}/.well-known/stellar.toml"
+
+  STDERR.puts "Getting #{home_url}"
+  begin
+    toml = open(home_url).read
+    simplistic_toml_parse(toml).merge(account_info)
+  rescue => e
+    STDERR.puts "Could not get stellar.toml: #{e.message}"
+    return account_info
+  end
+end
+
+def simplistic_toml_parse(toml)
+  values = {}
+  toml.lines.each do |line|
+    key, value = line.split('=', 2)
+    if value
+      values[key.strip] = value.strip.gsub('"',"")
+    end
+  end
+  values
+end
+
+if ARGV.count != 1
+  STDERR.puts "Usage: get_validator_accounts <seen_validators>"
+end
+
+validators = JSON.load(File.read(ARGV[0]))
+unchecked_accounts = validators.keys
+
+STDERR.puts("Getting #{unchecked_accounts.count} accounts")
+
+5.times.map do |_|
+  Thread.new do
+    while account = unchecked_accounts.pop
+      STDERR.puts "Getting account info for #{account}"
+      account_info = get_account_info(account)
+      validators[account]["account_info"] = account_info
+    end
+  end
+end.each(&:join)
+
+puts JSON.dump(validators)
