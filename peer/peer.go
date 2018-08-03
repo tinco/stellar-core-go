@@ -64,7 +64,9 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 func (peer *Peer) Start() {
 	err := peer.startAuthentication(peer.nodeInfo)
 
-	log.Printf("Authentication failed for peer %s: %s", peer.Address, err.Error())
+	if err != nil {
+		log.Printf("Authentication failed for peer %s: %s", peer.Address, err.Error())
+	}
 
 	go func() {
 		for {
