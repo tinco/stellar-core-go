@@ -1,4 +1,4 @@
 /stellar-core-go
 bin/*
 !bin/.gitkeep
-
+*.swp

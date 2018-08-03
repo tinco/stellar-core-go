@@ -27,8 +27,19 @@ def check_peers(next_peer)
   end
 end
 
-initial_peer = "stellar0.keybase.io:11625"
-$peers = get_peers(initial_peer)
+if ARGV.count != 1
+  puts "usage: get_all_peers <known_peers>"
+end
+
+STDERR.puts "Getting initial peers"
+known_peers = JSON.load(File.read(ARGV[0]))
+known_peers.values.each do |peer|
+  address = "#{peer["host"]}:#{peer["port"]}"
+  STDERR.puts "Getting peers from #{address}"
+  $peers += get_peers(address)
+end
+$peers.uniq!
+STDERR.puts "Done getting initial peers, got #{$peers.count}"
 
 STDERR.puts "Starting 100 threads:\n"
 
