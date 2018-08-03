@@ -2,7 +2,11 @@
 
 require 'json'
 
-peers = JSON.load(STDIN.read)
+if ARGV.count != 1
+  puts "Usage: get_peer_infos <available_peers>"
+end
+
+peers = JSON.load(File.read(ARGV[0]))
 
 available_peers = peers["available_peers"]
 STDERR.puts "Checking #{available_peers.count} peers"
