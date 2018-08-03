@@ -9,6 +9,7 @@ def get_account_info(public_key)
   STDERR.puts "Getting #{account_url}"
   begin
     home_domain = JSON.load(open(account_url).read)["home_domain"]
+    raise "No home domain set" unless home_domain
   rescue => e
     STDERR.puts("Could not get home domain: #{e.message}")
     return nil
@@ -23,11 +24,12 @@ def get_account_info(public_key)
   STDERR.puts "Getting #{home_url}"
   begin
     toml = open(home_url).read
-    simplistic_toml_parse(toml).merge(account_info)
+    account_info = simplistic_toml_parse(toml).merge(account_info)
   rescue => e
     STDERR.puts "Could not get stellar.toml: #{e.message}"
-    return account_info
   end
+  STDERR.puts "Got account_info: #{account_info.inspect}"
+  account_info
 end
 
 def simplistic_toml_parse(toml)

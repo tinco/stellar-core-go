@@ -5,7 +5,9 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/stellar/go/xdr"
@@ -74,7 +76,17 @@ func (peer *Peer) startAuthentication(nodeInfo *nodeInfo.NodeInfo) error {
 	peer.MustRespond()
 	authMessage, err := peer.receiveMessage()
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+		return err
+	}
+
+	if authMessage.Type != xdr.MessageTypeAuth {
+		err = errors.New("Auth unsuccesfful")
+		log.Printf("Expected Auth, got: %v\n", authMessage.Type)
+		if authMessage.Type == xdr.MessageTypeErrorMsg {
+			log.Printf("got error message: %s\n", authMessage.MustError().Msg)
+		}
+		return err
 	}
 	authMessage.MustAuth()
 	return nil
