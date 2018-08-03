@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 
+Encoding.default_external = Encoding::UTF_8
+
 require 'open-uri'
 require 'json'
 
@@ -8,7 +10,7 @@ def get_account_info(public_key)
 
   STDERR.puts "Getting #{account_url}"
   begin
-    home_domain = JSON.load(open(account_url).read)["home_domain"]
+    home_domain = JSON.load(open(account_url).read.force_encoding("UTF-8"))["home_domain"]
     raise "No home domain set" unless home_domain
   rescue => e
     STDERR.puts("Could not get home domain: #{e.message}")
@@ -23,7 +25,7 @@ def get_account_info(public_key)
 
   STDERR.puts "Getting #{home_url}"
   begin
-    toml = open(home_url).read
+    toml = open(home_url).read.force_encoding("UTF-8")
     account_info = simplistic_toml_parse(toml).merge(account_info)
   rescue => e
     STDERR.puts "Could not get stellar.toml: #{e.message}"

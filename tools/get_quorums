@@ -2,7 +2,11 @@
 
 require 'json'
 
-peers = JSON.load(STDIN.read)
+if ARGV.count != 1
+  STDERR.puts "usage: get_quorums <peer_infos>"
+end
+
+peers = JSON.load(File.read(ARGV[0]))
 
 threads = []
 quorumsets = {}
