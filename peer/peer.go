@@ -5,9 +5,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -40,6 +40,7 @@ type Peer struct {
 
 	// PeerInfo contains information about the connected peer
 	PeerInfo *xdr.Hello
+	Address  string
 }
 
 // Connect returns a peer that manages a connection to a stellar-core node
@@ -53,6 +54,7 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 		conn:      conn,
 		nodeInfo:  nodeInfo,
 		OnMessage: func(_ *xdr.StellarMessage) {},
+		Address:   address,
 	}
 
 	return &peer, nil
@@ -60,7 +62,9 @@ func Connect(nodeInfo *nodeInfo.NodeInfo, address string) (*Peer, error) {
 
 // Start logs the peer in to the node and starts processing messages
 func (peer *Peer) Start() {
-	peer.startAuthentication(peer.nodeInfo)
+	err := peer.startAuthentication(peer.nodeInfo)
+
+	log.Printf("Authentication failed for peer %s: %s", peer.Address, err.Error())
 
 	go func() {
 		for {
@@ -120,9 +124,11 @@ func (peer *Peer) receiveMessage() (*xdr.StellarMessage, error) {
 	}
 	buf := make([]byte, 0, length)
 	bytesRead := 0
+	var n int
+
 	for {
 		tmp := make([]byte, length-bytesRead)
-		n, err := peer.conn.Read(tmp)
+		n, err = peer.conn.Read(tmp)
 		bytesRead += n
 		if err != nil {
 			if err != io.EOF {
@@ -170,7 +176,7 @@ func (peer *Peer) receiveHeader() (int, error) {
 	}
 
 	if read != 4 {
-		return 0, errors.New(fmt.Sprintf("Tried to receive header, got %v instead of 4 bytes", read))
+		return 0, fmt.Errorf("Tried to receive header, got %v instead of 4 bytes", read)
 	}
 
 	length := 0
