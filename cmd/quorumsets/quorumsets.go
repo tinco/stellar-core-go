@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -15,13 +14,17 @@ import (
 	"github.com/tinco/stellar-core-go/peer"
 )
 
-var quorumSetHashes map[xdr.Hash]string
+// TODO we somehow want to know about the NodeID.. maybe we filter based on node
+// id and then just log whenever the node id is not our node id?
+
+// map of quorum set hashes to their owners
+var quorumSetHashes map[xdr.Hash]xdr.NodeId
 var p *peer.Peer
 
 func main() {
 	log.Println("Stellar Go Debug Client")
 
-	quorumSetHashes = make(map[xdr.Hash]string)
+	quorumSetHashes = make(map[xdr.Hash]xdr.NodeId)
 
 	nodeInfo := nodeInfo.SetupCrypto()
 
@@ -33,14 +36,14 @@ func main() {
 		log.Fatal("Couldn't connect to ", peerAddress)
 	}
 
-	quorumSetMessagesChan := make(chan string, 1)
+	quorumSetMessagesChan := make(chan *xdr.StellarMessage, 1)
 
 	p.OnMessage = func(message *xdr.StellarMessage) {
 		switch message.Type {
 		case xdr.MessageTypeScpMessage:
 			handleSCPMessage(message)
 		case xdr.MessageTypeScpQuorumset:
-			quorumSetMessagesChan <- handleScpQuorumSet(message)
+			quorumSetMessagesChan <- message
 		case xdr.MessageTypeErrorMsg:
 			err := message.MustError()
 			log.Printf("Got error message: %s\n", err.Msg)
@@ -54,12 +57,16 @@ func main() {
 
 	p.Start()
 
-	for {
+	time.Sleep(30 * time.Second) // sometimes updates are slow to come in?
+
+	for hash, owner := range quorumSetHashes {
+		p.GetScpQuorumset(hash)
 		select {
-		case qs := <-quorumSetMessagesChan:
+		case msg := <-quorumSetMessagesChan:
+			qs := handleScpQuorumSet(msg, owner)
 			fmt.Println(qs)
-		case <-time.After(30 * time.Second):
-			os.Exit(0)
+		case <-time.After(3 * time.Second):
+			log.Fatalf("Timed out waiting for quorum set message")
 		}
 	}
 }
@@ -69,10 +76,12 @@ func gotNewHash(hash xdr.Hash) {
 	p.GetScpQuorumset(hash)
 }
 
-func handleScpQuorumSet(message *xdr.StellarMessage) string {
+func handleScpQuorumSet(message *xdr.StellarMessage, owner xdr.NodeId) string {
 	qs := message.MustQSet()
 	log.Printf("Received qset")
 	prepared := prepQuorumSet(qs)
+	pkey := owner.MustEd25519()
+	prepared["owner"], _ = strkey.Encode(strkey.VersionByteAccountID, pkey[:])
 	jsDump, err := json.Marshal(prepared)
 	if err != nil {
 		log.Fatal("Could not dump json of quorumset")
@@ -80,7 +89,7 @@ func handleScpQuorumSet(message *xdr.StellarMessage) string {
 	return string(jsDump)
 }
 
-func prepQuorumSet(qs xdr.ScpQuorumSet) interface{} {
+func prepQuorumSet(qs xdr.ScpQuorumSet) map[string]interface{} {
 	validators := qs.Validators
 	innerSets := qs.InnerSets
 	threshold := qs.Threshold
@@ -112,9 +121,7 @@ func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
 		qs := envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
 		_, exists := quorumSetHashes[qs]
 		if !exists {
-			encoded := base32.StdEncoding.EncodeToString(qs[:])
-			quorumSetHashes[qs] = encoded
-			gotNewHash(qs)
+			quorumSetHashes[qs] = envelope.Statement.NodeId
 		}
 	}
 }
