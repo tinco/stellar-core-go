@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+
+require 'json'
+
+if ARGV.count != 1
+  puts "Usage: missing_validators <quorums>"
+end
+
+quorums = JSON.load(File.read(ARGV[0]))
+
+# The goal of this script is to find out if it ever happens that a node has a
+# quorumset defined but is not actually receiving any messages from a validator
+# in the quorumset.
+
+# For each validator, we will find the quorumset it is the owner of. Then we will
+# check if all the validators in the list are actually available.
+
+quorums.each do |owner, quorums|
+  own_quorum = quorums.find {|q| q["owner"] == owner }
+  if own_quorum.nil?
+    STDERR.puts "#{owner} does not have its own quorumset."
+    next
+  end
+
+    known_validators = quorums.map {|q| q["owner"]}
+    missing_validators = own_quorum["validators"] - known_validators
+
+    if not missing_validators.empty?
+      STDERR.puts "#{owner} misses the following validators: #{missing_validators.inspect}"
+    end
+end
