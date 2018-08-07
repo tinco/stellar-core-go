@@ -64,4 +64,21 @@ STDERR.puts("Getting #{unchecked_accounts.count} accounts")
   end
 end.each(&:join)
 
+### Annotate with organizations derived from domains
+
+suffixes = open("https://publicsuffix.org/list/public_suffix_list.dat").readlines.map(&:strip).reject {|l| l.start_with?("//") || l.empty? }
+suffixes.sort_by!(&:length).reverse!
+
+validators.each do |_, validator|
+  organization = validator.dig("account_info", "ORG_NAME")
+  if organization.nil? || organization.empty?
+    domain = validator.dig("known_info", "host") || validator.dig("account_info", "home_domain")
+    if domain
+      suffixes.each { |suffix| break if domain.chomp!("." + suffix) }
+      organization = domain.split(".").last
+    end
+  end
+  validator["organization_name"] = organization
+end
+
 puts JSON.dump(validators)
