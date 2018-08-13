@@ -35,12 +35,12 @@ def crawl
     get_quorums
   end
 
-  time "getting validator accounts" do
-    get_validator_accounts
-  end
-
   time "merging infos, quorums, known" do
     merge_infos_quorums_known
+  end
+
+  time "getting validator accounts" do
+    get_validator_accounts
   end
 
   time "determining missing validators" do
