@@ -4,8 +4,10 @@ require 'rufus-scheduler'
 
 crawler = Rufus::Scheduler.new
 
+$crawl = 0
+
 def log(message)
-  STDERR.puts message
+  STDERR.puts "#{Time.now}| #{message}"
 end
 
 def time(message)
@@ -51,38 +53,43 @@ def crawl
 end
 
 def get_known_validators
-  `./tools/get_known_validators > /data/known_validators.json`
+  `./tools/get_known_validators 1>./data/known_validators.json 2>>./data/known_validators.log`
 end
 
 def get_all_peers
-  `./tools/get_all_peers ./data/known_validators.json 1>all_peers.json`
+  `./tools/get_all_peers ./data/known_validators.json 1>./data/all_peers.json 2>>./data/get_all_peers.log`
 end
 
 def get_peer_infos
-  `./tools/get_peer_infos ./data/all_peers.json > data/peer_infos.json`
+  `./tools/get_peer_infos ./data/all_peers.json > ./data/peer_infos.json 2>>./data/peer_infos.log`
 end
 
 def get_quorums
-  `./tools/get_quorums ./data/peer_infos.json > ./data/quorums.json`
+  `./tools/get_quorums ./data/peer_infos.json > ./data/quorums.json 2>>./data/quorums.log`
 end
 
 def get_validator_accounts
-  `./tools/get_validator_accounts ./data/seen_validators.json > ./data/accounts.json`
+  `./tools/get_validator_accounts ./data/seen_validators.json >./data/accounts.json 2>>./data/accounts.log`
 end
 
 def merge_infos_quorums_known
-  `./tools/merge_infos_quorums_known ./data/peer_infos.json ./data/quorums.json ./data/known_validators.json > ./data/seen_validators.json`
+  `./tools/merge_infos_quorums_known ./data/peer_infos.json ./data/quorums.json ./data/known_validators.json > ./data/seen_validators.json 2>>./data/merge_infos_quorums_known.log`
 end
 
 def get_missing_validators
-  `./tools/missing_validators /data/quorums.json`
+  `./tools/missing_validators ./data/quorums.json >./data/missing_validators.json 2>>./data/missing_validators.log`
 end
 
 def merge_existing
+  # Todo
 end
 
-crawler.interval '1m' do
-  time "crawl" do
+puts "Starting crawler"
+STDERR.puts "Starting crawler"
+
+crawler.interval '10m', first: :now  do
+  $crawl += 1
+  time "crawl #{$crawl}" do
     begin
       crawl
     rescue => e

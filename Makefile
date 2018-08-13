@@ -5,6 +5,9 @@ default: build
 
 build: $(CMD_TARGETS)
 
-.PHONY: $(CMD_TARGETS)
+docker:
+	docker build -f docker/stellar-crawler.dockerfile -t tinco/stellar-crawler .
+
+.PHONY: $(CMD_TARGETS) docker
 $(CMD_TARGETS):
 	go build -o bin/$(notdir $(basename $@)) cmd/$(notdir $(basename $@))/*
