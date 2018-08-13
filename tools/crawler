@@ -1,0 +1,95 @@
+#!/usr/bin/env ruby
+require 'json'
+require 'rufus-scheduler'
+
+crawler = Rufus::Scheduler.new
+
+def log(message)
+  STDERR.puts message
+end
+
+def time(message)
+  log "Starting #{message}"
+  t = Time.now
+  yield
+ensure
+  log "Finished #{message} in #{Time.now - t} seconds"
+end
+
+def crawl
+  time "get known validators" do
+    get_known_validators
+  end
+
+  time "getting all peers" do
+    get_all_peers
+  end
+
+  time "getting peer infos" do
+    get_peer_infos
+  end
+
+  time "getting quorums" do
+    get_quorums
+  end
+
+  time "getting validator accounts" do
+    get_validator_accounts
+  end
+
+  time "merging infos, quorums, known" do
+    merge_infos_quorums_known
+  end
+
+  time "determining missing validators" do
+    get_missing_validators
+  end
+
+  time "merging with existing" do
+    merge_existing
+  end
+end
+
+def get_known_validators
+  `./tools/get_known_validators > /data/known_validators.json`
+end
+
+def get_all_peers
+  `./tools/get_all_peers ./data/known_validators.json 1>all_peers.json`
+end
+
+def get_peer_infos
+  `./tools/get_peer_infos ./data/all_peers.json > data/peer_infos.json`
+end
+
+def get_quorums
+  `./tools/get_quorums ./data/peer_infos.json > ./data/quorums.json`
+end
+
+def get_validator_accounts
+  `./tools/get_validator_accounts ./data/seen_validators.json > ./data/accounts.json`
+end
+
+def merge_infos_quorums_known
+  `./tools/merge_infos_quorums_known ./data/peer_infos.json ./data/quorums.json ./data/known_validators.json > ./data/seen_validators.json`
+end
+
+def get_missing_validators
+  `./tools/missing_validators /data/quorums.json`
+end
+
+def merge_existing
+end
+
+crawler.interval '1m' do
+  time "crawl" do
+    begin
+      crawl
+    rescue => e
+      log "Error while crawling: #{e.message}\n#{e.backtrace.join("\n")}"
+    end
+  end
+end
+
+crawler.join
+
