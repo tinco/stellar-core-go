@@ -65,8 +65,8 @@ def add_history(history, value)
 
   history["1d"].shift if history["1d"].first["time"] < js_time($days_ago)
 
-  distribution[value] ||= 0
-  distribution[value] += 1
+  distribution["data"][value] ||= 0
+  distribution["data"][value] += 1
 
   # Add history 1-week bucket
   distribution = history["1w"].last
@@ -77,8 +77,8 @@ def add_history(history, value)
 
   history["1w"].shift if history["1w"].first["time"] < js_time($weeks_ago)
 
-  distribution[value] ||= 0
-  distribution[value] += 1
+  distribution["data"][value] ||= 0
+  distribution["data"][value] += 1
 
   # Add history 1-month bucket
   distribution = history["1m"].last
@@ -89,8 +89,8 @@ def add_history(history, value)
 
   history["1m"].shift if history["1m"].first["time"] < js_time($months_ago)
 
-  distribution[value] ||= 0
-  distribution[value] += 1
+  distribution["data"][value] ||= 0
+  distribution["data"][value] += 1
 end
 
 def merge_accounts(old_account, new_account)
