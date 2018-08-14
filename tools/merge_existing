@@ -141,4 +141,4 @@ new_data["organizations"].each do |key, organization|
   data["organizations"][key] = merge_organizations(old_organization, organization)
 end
 
-puts JSON.dump(data)
+puts JSON.dump(new_data)
