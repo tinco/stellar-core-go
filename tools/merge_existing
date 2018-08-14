@@ -132,7 +132,7 @@ new_data["accounts"].each do |key, account|
   data["accounts"][key] = merge_accounts(old_account, account)
 end
 
-new_data["organizations"] = data["organizations"].merge("organizations")
+new_data["organizations"] = data["organizations"].merge(new_data["organizations"])
 
 new_data["organizations"].each do |key, organization|
   old_organization= data["organizations"][key]
