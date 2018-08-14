@@ -76,13 +76,13 @@ validators.each do |_, validator|
     if domain
       suffixes.each do |suffix|
         if domain.chomp! "." + suffix
-	        organization = domain.split(".").last + "." + suffix 
+	        organization = domain.split(".").last + "." + suffix
           break
         end
       end
     end
   end
-  validator["organization_name"] = organization
+  validator["organization_name"] = organization || "unknown"
 end
 
 puts JSON.dump(validators)

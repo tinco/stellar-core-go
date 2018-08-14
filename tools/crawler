@@ -47,6 +47,10 @@ def crawl
     get_missing_validators
   end
 
+  time "enhancing accounts" do
+    enhance_accounts
+  end
+
   time "merging with existing" do
     merge_existing
   end
@@ -80,8 +84,13 @@ def get_missing_validators
   `./tools/missing_validators ./data/quorums.json >./data/missing_validators.json 2>>./data/missing_validators.log`
 end
 
+def enhance_accounts
+  `./tools/enhance_accounts ./data/accounts.json >./data/stellar-core-data.new.json 2>>./data/enhance_accounts.log`
+end
+
 def merge_existing
-  # Todo
+  `./tools/merge_existing ./data/stellar-core-data.json ./data/stellar-core-data.new.json >./data/stellar-core-data.merged.json 2>>./data/merge_existing.log`
+  `mv ./data/stellar-core-data.merged.json ./data/stellar-core-data.json`
 end
 
 puts "Starting crawler"
@@ -99,4 +108,3 @@ crawler.interval '10m', first: :now  do
 end
 
 crawler.join
-

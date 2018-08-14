@@ -1,0 +1,91 @@
+#!/usr/bin/env ruby
+Encoding.default_external = Encoding::UTF_8
+
+require 'json'
+require 'digest'
+
+if ARGV.count != 1
+  STDERR.puts "Usage: enhance_accounts <accounts>"
+  exit 1
+end
+
+accounts = JSON.load(File.read(ARGV[0]))
+
+def trust_index(account)
+  account["trust_value"] / $total_trust
+end
+
+def trust_table(account)
+  return {} if account["quorum"].nil?
+  return account["trust_table"] if account["trust_table"]
+
+  trust_table = account["trust_table"] = {}
+  quorum = account["quorum"]
+
+  base_trust = 1.0 / quorum["threshold"]
+  quorum["validators"].each {|v| trust_table[v] = base_trust}
+
+  innerset_trust = lambda do |set, base|
+      base_trust = base * (1.0 / set["threshold"])
+      set["validators"].each do |v|
+        trust_table[v] ||= 0
+        trust_table[v] += base_trust
+      end
+      set["inner_sets"].each {|set| innerset_trust[set, base_trust]}
+  end
+
+  quorum["inner_sets"].each {|set| innerset_trust[set, base_trust]}
+  trust_table
+end
+
+# The amount of trust a validator puts into another validator is
+# 1 / threshold for the level it is in (this is a trust maximum)
+# if the validator is in an inner set, the inverse thresholds are
+# multiplied.
+# Note that because it is a maximum amount of trust, it is actually
+# possible for the nodes total trust to be higher than 100%, as it
+# will still be able to form a quorum when a subset of nodes is down
+def trust_from(validator, other_validator)
+  trust_table(validator)[other_validator["peer_id"]] || 0
+end
+
+def calculate_trust_indices(validators)
+  $total_trust = 0
+  validators.each do |validator|
+    trust = 0
+    validator["trusting_nodes"] = []
+    validators.each do |other_validator|
+      trust_for_us = trust_from(other_validator, validator)
+      if trust_for_us > 0
+        trust += trust_for_us
+        validator["trusting_nodes"] << other_validator["peer_id"]
+      end
+    end
+    $total_trust += trust
+    validator["trust_value"] = trust
+  end
+end
+
+calculate_trust_indices(accounts.values)
+
+def strkey(name)
+  "G#{Digest::SHA256.hexdigest(name).to_i(16).to_s(32).upcase}"
+end
+
+organizations = {}
+sorted_accounts = accounts.values.sort {|a,b| b["trust_value"] <=> a["trust_value"]}
+sorted_accounts.each do |validator|
+  name = validator["organization_name"] || "unknown"
+  id = strkey(name)
+  validator["organization_id"] = id
+  organization = organizations[id] ||= { "id" => id, "name" => name, "validators" => [] }
+  organization["validators"] << validator["peer_id"]
+end
+
+data = {
+  "total_trust": $total_trust,
+  "accounts": accounts,
+  "organizations": organizations
+}
+
+puts JSON.dump(data)
