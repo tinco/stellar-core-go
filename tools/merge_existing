@@ -13,11 +13,12 @@ data = nil
 begin
   data = JSON.load(File.read(ARGV[0]))
 rescue => e
-  data = {
-    "accounts": {},
-    "organizations": {}
-  }
+  STDERR.puts "Failed reading old data: #{e.message}"
 end
+
+data ||= {}
+data["accounts"] ||= {}
+data["organizations"] ||= {}
 
 new_data = JSON.load(File.read(ARGV[1]))
 
