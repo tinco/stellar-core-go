@@ -128,10 +128,14 @@ def merge_organizations(old_organization, new_organization)
   old_organization.merge(new_organization)
 end
 
+new_data["accounts"] = data["accounts"].merge(new_data["accounts"])
+
 new_data["accounts"].each do |key, account|
   old_account = data["accounts"][key]
   data["accounts"][key] = merge_accounts(old_account, account)
 end
+
+new_data["organizations"] = data["organizations"].merge("organizations")
 
 new_data["organizations"].each do |key, organization|
   old_organization= data["organizations"][key]
