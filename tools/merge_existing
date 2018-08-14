@@ -66,6 +66,7 @@ def add_history(history, value)
 
   history["1d"].shift if history["1d"].first["time"] < js_time($days_ago)
 
+  distribution["data"] ||= {}
   distribution["data"][value] ||= 0
   distribution["data"][value] += 1
 
@@ -78,6 +79,7 @@ def add_history(history, value)
 
   history["1w"].shift if history["1w"].first["time"] < js_time($weeks_ago)
 
+  distribution["data"] ||= {}
   distribution["data"][value] ||= 0
   distribution["data"][value] += 1
 
@@ -90,6 +92,7 @@ def add_history(history, value)
 
   history["1m"].shift if history["1m"].first["time"] < js_time($months_ago)
 
+  distribution["data"] ||= {}
   distribution["data"][value] ||= 0
   distribution["data"][value] += 1
 end
