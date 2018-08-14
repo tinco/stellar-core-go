@@ -54,6 +54,8 @@ def new_history
 end
 
 def add_history(history, value)
+  value = value.to_s
+
   history["10m"].push([$crawl_time_js, value])
   history["10m"].shift if history["10m"].length > $history_buckets["10m"]
 
