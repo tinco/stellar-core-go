@@ -73,7 +73,8 @@ def get_quorums
 end
 
 def get_validator_accounts
-  `./tools/get_validator_accounts ./data/seen_validators.json >./data/accounts.json 2>>./data/accounts.log`
+  `./tools/get_validator_accounts ./data/seen_validators.json >./data/accounts.new.json 2>>./data/accounts.log`
+  `mv ./data/accounts.new.json ./data/accounts.json`
 end
 
 def merge_infos_quorums_known
