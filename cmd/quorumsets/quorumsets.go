@@ -18,13 +18,13 @@ import (
 // id and then just log whenever the node id is not our node id?
 
 // map of quorum set hashes to their owners
-var quorumSetHashes map[xdr.Hash]xdr.NodeId
+var quorumSetHashes map[xdr.Hash]map[xdr.NodeId]bool
 var p *peer.Peer
 
 func main() {
 	log.Println("Stellar Go Debug Client")
 
-	quorumSetHashes = make(map[xdr.Hash]xdr.NodeId)
+	quorumSetHashes = make(map[xdr.Hash]map[xdr.NodeId]bool)
 
 	nodeInfo := nodeInfo.SetupCrypto()
 
@@ -59,12 +59,14 @@ func main() {
 
 	time.Sleep(30 * time.Second) // sometimes updates are slow to come in?
 
-	for hash, owner := range quorumSetHashes {
+	for hash, owners := range quorumSetHashes {
 		p.GetScpQuorumset(hash)
 		select {
 		case msg := <-quorumSetMessagesChan:
-			qs := handleScpQuorumSet(msg, owner)
-			fmt.Println(qs)
+			for owner := range owners {
+				qs := handleScpQuorumSet(msg, owner)
+				fmt.Println(qs)
+			}
 		case <-time.After(3 * time.Second):
 			log.Fatalf("Timed out waiting for quorum set message")
 		}
@@ -117,13 +119,22 @@ func prepQuorumSet(qs xdr.ScpQuorumSet) map[string]interface{} {
 }
 
 func trackQuorumSetHashes(envelope xdr.ScpEnvelope) {
-	if envelope.Statement.Pledges.Type == xdr.ScpStatementTypeScpStExternalize {
-		qs := envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
-		_, exists := quorumSetHashes[qs]
-		if !exists {
-			quorumSetHashes[qs] = envelope.Statement.NodeId
-		}
+	var qs xdr.Hash
+	switch envelope.Statement.Pledges.Type {
+	case xdr.ScpStatementTypeScpStNominate:
+		qs = envelope.Statement.Pledges.MustNominate().QuorumSetHash
+	case xdr.ScpStatementTypeScpStExternalize:
+		qs = envelope.Statement.Pledges.MustExternalize().CommitQuorumSetHash
+	case xdr.ScpStatementTypeScpStPrepare:
+		qs = envelope.Statement.Pledges.MustPrepare().QuorumSetHash
+	case xdr.ScpStatementTypeScpStConfirm:
+		qs = envelope.Statement.Pledges.MustConfirm().QuorumSetHash
 	}
+	_, exists := quorumSetHashes[qs]
+	if !exists {
+		quorumSetHashes[qs] = make(map[xdr.NodeId]bool)
+	}
+	quorumSetHashes[qs][envelope.Statement.NodeId] = true
 }
 
 func handleSCPMessage(message *xdr.StellarMessage) {
