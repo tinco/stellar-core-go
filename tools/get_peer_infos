@@ -23,6 +23,8 @@ def get_peer_info(peer_address)
       connection_status = {}
       connection_status["error"] = "Timed out"
       info = {"info" => {}}
+      STDERR.puts "Peer #{peer_address} timed out (#{info.inspect})"
+      return
     else
       STDERR.puts "No valid output from #{peer_address}: #{results}"
       return
