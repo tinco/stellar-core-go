@@ -74,6 +74,7 @@ validators.each do |_, validator|
   if organization.nil? || organization.empty?
     domain = validator.dig("known_info", "host") || validator.dig("account_info", "home_domain")
     if domain
+      domain = domain.dup
       suffixes.each do |suffix|
         if domain.chomp! "." + suffix
 	        organization = domain.split(".").last + "." + suffix
