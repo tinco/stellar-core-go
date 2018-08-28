@@ -27,7 +27,7 @@ def js_time(time)
 end
 
 $crawl_time = Time.now
-$crawl_time_js = data["last_crawl_time"] = js_time($crawl_time)
+$crawl_time_js = new_data["last_crawl_time"] = js_time($crawl_time)
 
 $history_buckets = {
   "10m" => 6 * 24,

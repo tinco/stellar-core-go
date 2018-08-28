@@ -1,0 +1,107 @@
+#!/usr/bin/env ruby
+Encoding.default_external = Encoding::UTF_8
+
+VERSION = "v1"
+
+require 'json'
+require 'date'
+require 'fileutils'
+require 'pry'
+
+class Hash
+  def method_missing(method, *args)
+    return super unless args.empty?
+    if has_key? method
+      return self[method]
+    elsif has_key? method.to_s
+      return self[method.to_s]
+    end
+    return super
+  end
+end
+
+if ARGV.count != 1
+  puts "Usage: make_api <data>"
+  exit 1
+end
+
+$data = nil
+begin
+  $data = JSON.load(File.read(ARGV[0]))
+rescue => e
+  STDERR.puts "Failed reading data: #{e.message}"
+end
+
+def data
+  $data
+end
+
+def mkdir(dir)
+  dir_name = "data/api/#{VERSION}/#{dir}"
+  FileUtils.mkdir_p dir_name
+  dir_name
+end
+
+def dump_to_file(name, data)
+  dir_name = mkdir(File.dirname(name))
+  file_name = File.basename(name)
+  File.write(dir_name + '/' + file_name, JSON.dump(data))
+end
+
+NODE_HISTORY_FIELDS = %w[accepts_connections_history seen_history quorum_history]
+BIG_NODE_FIELDS = %w[peers communicating_validators] + NODE_HISTORY_FIELDS
+ORGANIZATION_HISTORY_FIELDS = %w[seen_history]
+BIG_ORGANIZATION_FIELDS = %w[] + ORGANIZATION_HISTORY_FIELDS
+
+def node_basic_info(node)
+  basic = node.reject {|k,v| BIG_NODE_FIELDS.include? k}
+  basic["quorum_history"] = node["quorum_history"].last(2)
+  basic["accepts_connections_history"] = {
+    "10m" => node.accepts_connections_history['10m'].last(6),
+    "1d" => node.accepts_connections_history['1d'].last(1),
+    "1w" => node.accepts_connections_history['1w'].last(1),
+    "1m" => node.accepts_connections_history['1m'].last(1)
+  }
+  basic["seen_history"] = {
+    "10m" => node.seen_history['10m'].last(6),
+    "1d" => node.seen_history['1d'].last(1),
+    "1w" => node.seen_history['1w'].last(1),
+    "1m" => node.seen_history['1m'].last(1)
+  }
+  basic
+end
+
+def node_full_info(node)
+  full = node_basic_info(node)
+  full["peers"] = node["peers"]
+  full["communicating_validators"] = node["communicating_validators"]
+  full
+end
+
+def node_full_history(node)
+  node.reject {|k,v| !NODE_HISTORY_FIELDS.include? k }
+end
+
+def organization_basic_info(organization)
+  organization.reject {|k,v| BIG_ORGANIZATION_FIELDS.include? k}
+end
+
+def make_nodes
+  nodes = { organizations: {}, nodes: {}, total_trust: data.total_trust, last_crawl_time: data.last_crawl_time }
+  data.accounts.each do |node_id, node|
+    nodes.nodes[node_id] = node_basic_info(node)
+  end
+
+  data.organizations.each do |organization_id, organization|
+    nodes.organizations[organization_id] = organization_basic_info(organization)
+  end
+
+  dump_to_file("nodes.json", nodes)
+
+  data.accounts.each do |node_id, node|
+    dump_to_file("nodes/#{node_id}.json", node_full_info(node))
+    dump_to_file("nodes/#{node_id}/history.json", node_full_history(node))
+  end
+end
+
+make_nodes

@@ -54,6 +54,10 @@ def crawl
   time "merging with existing" do
     merge_existing
   end
+
+  time "making api" do
+    make_api
+  end
 end
 
 def get_known_validators
@@ -92,6 +96,10 @@ end
 def merge_existing
   `./tools/merge_existing ./data/stellar-core-data.json ./data/stellar-core-data.new.json >./data/stellar-core-data.merged.json 2>>./data/merge_existing.log`
   `mv ./data/stellar-core-data.merged.json ./data/stellar-core-data.json`
+end
+
+def make_api
+  `./tools/make_api ./data/stellar-core-data.json 2>>./data/make-api.log`
 end
 
 puts "Starting crawler"
