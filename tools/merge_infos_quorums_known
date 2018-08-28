@@ -49,7 +49,7 @@ end
 
 quorums.each do |k, qss|
   seen_validators[k] ||= { "peer_id" => k} # this should not happen..
-  seen_validators[k]["communicating_validators"] = qss.map{|qs| qs["owner"]}
+  seen_validators[k]["communicating_validators"] = qss.map{|qs| qs["owner"]}.uni
 end
 
 known_validators.each do |k,v|
