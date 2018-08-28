@@ -6,7 +6,6 @@ VERSION = "v1"
 require 'json'
 require 'date'
 require 'fileutils'
-require 'pry'
 
 class Hash
   def method_missing(method, *args)
