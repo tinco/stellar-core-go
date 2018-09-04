@@ -54,6 +54,7 @@ BIG_ORGANIZATION_FIELDS = %w[] + ORGANIZATION_HISTORY_FIELDS
 
 def node_basic_info(node)
   basic = node.reject {|k,v| BIG_NODE_FIELDS.include? k}
+  basic["id"] = node["peer_id"]
   basic["quorum_history"] = node["quorum_history"].last(2)
   basic["accepts_connections_history"] = {
     "10m" => node.accepts_connections_history['10m'].last(6),

@@ -137,8 +137,13 @@ end
 new_data["organizations"] = data["organizations"].merge(new_data["organizations"])
 
 new_data["organizations"].each do |key, organization|
-  old_organization= data["organizations"][key]
+  old_organization = data["organizations"][key]
   data["organizations"][key] = merge_organizations(old_organization, organization)
 end
+
+# An organization should be removed if all its validators now have a different organization name
+new_data["organizations"].reject! {|name, organization|
+  organization["validators"].all? { |id|
+    new_data["organizations"][id]["organization_name"] != name } }
 
 puts JSON.dump(new_data)
