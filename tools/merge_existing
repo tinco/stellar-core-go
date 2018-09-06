@@ -142,9 +142,9 @@ new_data["organizations"].each do |key, organization|
 end
 
 # An organization should be removed if all its validators now have a different organization name
-new_data["organizations"].reject! do |name, organization|
+new_data["organizations"].reject! do |organization_id, organization|
   organization["validators"].all? do |id|
-    organization = new_data["accounts"][id]["organization_name"] != name
+    organization = new_data["accounts"][id]["organization_name"] != organization["name"]
   end
 end
 
