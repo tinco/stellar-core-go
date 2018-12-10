@@ -29,7 +29,7 @@ func (peer *Peer) GetTxSet(hash xdr.Hash) {
 }
 
 // AnnounceTransaction informs peer of a transaction
-func (peer *Peer) AnnounceTransaction(tx xdr.Transaction) {
+func (peer *Peer) AnnounceTransaction(tx xdr.TransactionEnvelope) {
 	command := tx
 	message, err := xdr.NewStellarMessage(xdr.MessageTypeTransaction, command)
 	if err != nil {
