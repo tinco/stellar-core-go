@@ -80,7 +80,6 @@ func gotNewHash(hash xdr.Hash) {
 
 func handleScpQuorumSet(message *xdr.StellarMessage, owner xdr.NodeId) string {
 	qs := message.MustQSet()
-	log.Printf("Received qset")
 	prepared := prepQuorumSet(qs)
 	pkey := owner.MustEd25519()
 	prepared["owner"], _ = strkey.Encode(strkey.VersionByteAccountID, pkey[:])
